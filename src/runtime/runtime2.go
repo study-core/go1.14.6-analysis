@@ -329,6 +329,15 @@ type gobuf struct {
 	bp   uintptr // for GOEXPERIMENT=framepointer
 }
 
+/**
+ sudog 在等待列表中表示g，例如用于在“通道”上发送/接收。
+
+ sudog 是必需的，因为g ↔ 同步对象 关系是 多对多的。
+	一个g 可以出现在 许多等待列表上， 因此一个g可能有许多sudog。
+	并且许多 g 可能正在 等待同一个 同步对象，因此 一个对象可能有许多sudog
+
+ sudog 是从特殊池中分配的。 使用 `acquireSudog` 和 `releaseSudog` 分配 和 释放 它们
+ */
 // sudog represents a g in a wait list, such as for sending/receiving
 // on a channel.
 //
@@ -344,6 +353,7 @@ type sudog struct {
 	// channel this sudog is blocking on. shrinkstack depends on
 	// this for sudogs involved in channel ops.
 
+	// 指向的  g
 	g *g
 
 	// isSelect indicates g is participating in a select, so
@@ -392,6 +402,7 @@ type stack struct {
 	hi uintptr
 }
 
+// todo G 的定义
 type g struct {
 	// Stack parameters.
 	// stack describes the actual stack memory: [stack.lo, stack.hi).
@@ -405,7 +416,9 @@ type g struct {
 	stackguard1 uintptr // offset known to liblink
 
 	_panic       *_panic // innermost panic - offset known to liblink
-	_defer       *_defer // innermost defer
+
+	// 这个是当前 goroutine 的 defer 链表的首个 defer实例
+	_defer       *_defer // innermost defer 最内在的延迟
 	m            *m      // current m; offset known to arm liblink
 	sched        gobuf
 	syscallsp    uintptr        // if status==Gsyscall, syscallsp = sched.sp to use during gc
@@ -850,6 +863,20 @@ func extendRandom(r []byte, n int) {
 	}
 }
 
+/**
+todo 这个是 defer 关键字 的定义
+
+
+
+// _defer在延迟调用列表中保留一个条目。
+//如果在此处添加字段，请添加代码以在freedefer和deferProcStack中将其清除
+//此结构必须与cmd / compile / internal / gc / reflect.go：deferstruct中的代码匹配
+//和cmd / compile / internal / gc / ssa.go：（* state）.call。
+//一些延迟将分配在堆栈上，而一些延迟将分配在堆上。
+//在逻辑上，所有延迟器都是堆栈的一部分，因此请为
+//不需要初始化它们。 所有延迟都必须手动扫描，
+//并标记堆延迟。
+ */
 // A _defer holds an entry on the list of deferred calls.
 // If you add a field here, add code to clear it in freedefer and deferProcStack
 // This struct must match the code in cmd/compile/internal/gc/reflect.go:deferstruct
@@ -866,10 +893,19 @@ type _defer struct {
 	// defers. We have only one defer record for the entire frame (which may
 	// currently have 0, 1, or more defers active).
 	openDefer bool
+
+	// sp 和 pc 都是 寄存器
+
+	// 函数栈指针  sp
 	sp        uintptr  // sp at time of defer
+	// 程序计数器  pc
 	pc        uintptr  // pc at time of defer
+
+	// defer  func () 对应的 函数引用  (函数地址)
 	fn        *funcval // can be nil for open-coded defers
 	_panic    *_panic  // panic that is running defer
+
+	// 指向自身结构的指针，用于链接多个defer todo 就是用这个实现了 类似 多个defer 入栈的结构 ??
 	link      *_defer
 
 	// If openDefer is true, the fields below record values about the stack

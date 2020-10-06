@@ -212,6 +212,11 @@ func panicmem() {
 	panic(memoryError)
 }
 
+// todo 构建 defer 关键字实例
+// 用 siz 个字节的参数创建一个新的 defer 函数 fn
+// todo 编译器将defer语句转换为对此的调用
+// 			声明defer处调用， 其将defer函数存入goroutine的 链表 中
+//
 // Create a new deferred function fn with siz bytes of arguments.
 // The compiler turns a defer statement into a call to this.
 //go:nosplit
@@ -235,8 +240,13 @@ func deferproc(siz int32, fn *funcval) { // arguments of fn follow fn
 	if d._panic != nil {
 		throw("deferproc: d.panic != nil after newdefer")
 	}
+
+	// 从当前 g 中取出defer链表的 首个defer引用
+	// 将当前最新的 defer 指向 g 中取出的 首 defer
+	// 并且将当前最新 defer 置为 当前 g 中 defer 链表的 首个 defer
 	d.link = gp._defer
 	gp._defer = d
+
 	d.fn = fn
 	d.pc = callerpc
 	d.sp = sp
@@ -431,6 +441,13 @@ func newdefer(siz int32) *_defer {
 	return d
 }
 
+// 释放 defer 实例
+/**
+// 释放给定的 defer 实例
+// 此调用后不能使用defer
+//
+// 这一定不能 增加堆栈，因为调用它时可能会有一个没有堆栈映射的帧。
+ */
 // Free the given defer.
 // The defer cannot be used after this call.
 //
@@ -509,6 +526,19 @@ func freedeferfn() {
 	throw("freedefer with d.fn != nil")
 }
 
+
+// todo 执行 defer 实例的函数
+/**
+// 如果存在延迟函数，请运行该函数。
+// 编译器在调用defer的任何函数的末尾插入对此的调用。
+// 如果有一个延迟函数，它将调用runtime·jmpdefer，它将跳至该延迟函数，以使其似乎在调用 `deferreturn` 之前的那个点被 `deferreturn` 的调用者调用。
+	这样的结果是，一次又一次调用了 `deferreturn`，直到没有更多的deferred函数为止。
+//
+// 声明为nosplit，因为一旦我们开始修改调用者的框架以便重用框架来调用延迟的函数，就不应抢占该函数。
+//
+// 实际上并没有使用单个参数-它只占用了地址，因此可以与待处理的延迟匹配。
+ */
+//
 // Run a deferred function if there is one.
 // The compiler inserts a call to this at the end of any
 // function which calls defer.
@@ -526,11 +556,16 @@ func freedeferfn() {
 // taken so it can be matched against pending defers.
 //go:nosplit
 func deferreturn(arg0 uintptr) {
+
+	// 取出当前 g，
+	// 取出 g 中 defer链表的首个 defer
 	gp := getg()
 	d := gp._defer
 	if d == nil {
 		return
 	}
+
+	// 获取 当前 调用的  sp 寄存器 (保存 ret 数据的东西??)
 	sp := getcallersp()
 	if d.sp != sp {
 		return
@@ -856,7 +891,7 @@ func runOpenDeferFrame(gp *g, d *_defer) bool {
 		if p != nil && p.aborted {
 			break
 		}
-		d.fn = nil
+		d.fn = nil // 执行完 defer 的 func 后, 需要将其 置为 nil
 		// These args are just a copy, so can be cleared immediately
 		memclrNoHeapPointers(deferArgs, uintptr(argWidth))
 		if d._panic != nil && d._panic.recovered {

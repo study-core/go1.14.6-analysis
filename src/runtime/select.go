@@ -16,12 +16,17 @@ const debugSelect = false
 // Known to compiler.
 // Changes here must also be made in src/cmd/compile/internal/gc/select.go's walkselectcases.
 const (
-	caseNil = iota
-	caseRecv
-	caseSend
-	caseDefault
+	caseNil = iota		// 0: 空的 select  case 语句块
+	caseRecv			// 1: obj <- chan 的 select case 语句块
+	caseSend			// 2: chan <- obj 的 select case 语句块
+	caseDefault			// 3: default 的 select case 语句块
 )
 
+/**
+ todo select case结构 描述符
+ 编译器已知
+ 必须在 `src/cmd/internal/gc/select.go` 的 scasetype 中进行更改。
+ */
 // Select case descriptor.
 // Known to compiler.
 // Changes here must also be made in src/cmd/internal/gc/select.go's scasetype.
@@ -105,6 +110,35 @@ func block() {
 	gopark(nil, nil, waitReasonSelectNoCases, traceEvGoStop, 1) // forever
 }
 
+
+// todo  select 关键字 语句块 最终执行函数
+//		select 关键字 最终的执行 函数
+//
+//	入参说明:
+//
+//		cas0： scase数组的首地址， selectgo()就是从这些scase中找出一个返回
+//		order0: 一个两倍 cas0 数组长度的 buffer，保存scase随机序列 pollorder 和 scase 中 channel地址序列 lockorder
+//
+//
+//			pollorder： 每次 selectgo 执行 都会把scase序列打乱， 以达到随机检测case的目的
+//			lockorder： 所有case语句中channel序列， 以达到去重防止对channel加锁时重复加锁的目的
+//
+//	返参返回:
+//
+//		int： 选中case的编号， 这个case编号跟代码一致.
+//		bool: 是否成功从channle中读取了数据， 如果选中的case是从channel中读数据， 则该返回值表示是否读
+//
+/**
+	selectgo 实现 select语句
+
+	cas0 指向 [ncases]scase类型的数组，
+	order0指向[2 * ncases]uint16 类型的数组。
+
+	两者都驻留在goroutine的堆栈上（无论selectgo中有任何转义）
+
+	selectgo 返回所选 case 的索引，该索引与其各自的select {recv，send，default}调用的顺序位置相匹配。
+	同样，如果所选的 `scase` 是接收操作，它将报告是否接收到一个值
+ */
 // selectgo implements the select statement.
 //
 // cas0 points to an array of type [ncases]scase, and order0 points to
@@ -116,10 +150,34 @@ func block() {
 // Also, if the chosen scase was a receive operation, it reports whether
 // a value was received.
 func selectgo(cas0 *scase, order0 *uint16, ncases int) (int, bool) {
+
+	/**
+	todo 这个函数做的事是:
+
+			1. 锁定scase语句中所有的channel  todo 好比现在 要抓拍个快照, 则大家的chan 都先暂停操作了
+
+			2. 按照随机顺序检测scase中的channel是否ready
+
+			 		2.1 如果case可读， 则读取channel中数据， 解锁所有的channel， 然后返回(case index, true)
+			 		2.2 如果case可写， 则将数据写入channel， 解锁所有的channel， 然后返回(case index, false)
+			 		2.3 所有case都未ready， 则解锁所有的channel， 然后返回（default index, false）
+
+			3. 所有case都未ready， 且没有default语句
+
+			 		3.1 将当前协程加入到所有channel的等待队列
+			 		3.2 当将协程转入阻塞， 等待被唤醒
+
+			4. 唤醒后返回channel对应的case index
+
+			 		4.1 如果是读操作， 解锁所有的channel， 然后返回(case index, true)
+			 		4.2 如果是写操作， 解锁所有的channel， 然后返回(case index, false)
+	 */
+
 	if debugSelect {
 		print("select: cas0=", cas0, "\n")
 	}
 
+	// 取出
 	cas1 := (*[1 << 16]scase)(unsafe.Pointer(cas0))
 	order1 := (*[1 << 17]uint16)(unsafe.Pointer(order0))
 
@@ -129,6 +187,10 @@ func selectgo(cas0 *scase, order0 *uint16, ncases int) (int, bool) {
 
 	// Replace send/receive cases involving nil channels with
 	// caseNil so logic below can assume non-nil channel.
+	//
+	// 用 `caseNil` 代替涉及 `nil channel` 的 `send/receive cases`，因此下面的逻辑可以假定 `non-nil channel`
+	//
+	// 说白了, 就是先处理掉 nil 的 case, 给个 空结构 `scase{}`的值
 	for i := range scases {
 		cas := &scases[i]
 		if cas.c == nil && cas.kind != caseDefault {
@@ -138,7 +200,7 @@ func selectgo(cas0 *scase, order0 *uint16, ncases int) (int, bool) {
 
 	var t0 int64
 	if blockprofilerate > 0 {
-		t0 = cputicks()
+		t0 = cputicks()  // 取 原子钟 ??
 		for i := 0; i < ncases; i++ {
 			scases[i].releasetime = -1
 		}
@@ -152,7 +214,9 @@ func selectgo(cas0 *scase, order0 *uint16, ncases int) (int, bool) {
 	// cases correctly, and they are rare enough not to bother
 	// optimizing (and needing to test).
 
-	// generate permuted order
+	// generate permuted order  生成排列顺序
+	//
+	// todo 【超级重要】 每次执行 select 时, 都需要对  所有的 case 做一次 随机洗牌
 	for i := 1; i < ncases; i++ {
 		j := fastrandn(uint32(i + 1))
 		pollorder[i] = pollorder[j]
@@ -161,6 +225,11 @@ func selectgo(cas0 *scase, order0 *uint16, ncases int) (int, bool) {
 
 	// sort the cases by Hchan address to get the locking order.
 	// simple heap sort, to guarantee n log n time and constant stack footprint.
+	//
+	//	通过 `hchan` 地址 对 case 进行排序以获得锁定顺序
+	//	简单的 堆排序，以确保 O(N log N) 个时间 和 恒定的堆栈占用量
+	//
+	// todo 【重要】 对 所有的 case 中的 chan 做需要加锁标识,  下面会统一去上锁的
 	for i := 0; i < ncases; i++ {
 		j := i
 		// Start with the pollorder to permute cases on the same channel.
@@ -204,7 +273,7 @@ func selectgo(cas0 *scase, order0 *uint16, ncases int) (int, bool) {
 		}
 	}
 
-	// lock all the channels involved in the select
+	// lock all the channels involved in the select   锁定 select 中涉及的所有 chan
 	sellock(scases, lockorder)
 
 	var (
@@ -225,15 +294,23 @@ loop:
 	var casi int
 	var cas *scase
 	var recvOK bool
+
+	// todo 开始 逐个 遍历 洗牌 和 chan上锁 后的 所有case
 	for i := 0; i < ncases; i++ {
 		casi = int(pollorder[i])
 		cas = &scases[casi]
 		c = cas.c
 
+
+		// todo 判断当前 case 中 chan 的方向
 		switch cas.kind {
+
+		// 0: 空的 select case 语句块
 		case caseNil:
 			continue
 
+
+		// 1: obj <- chan 的 select case 语句块
 		case caseRecv:
 			sg = c.sendq.dequeue()
 			if sg != nil {
@@ -246,6 +323,7 @@ loop:
 				goto rclose
 			}
 
+		// 2: chan <- obj 的 select case 语句块
 		case caseSend:
 			if raceenabled {
 				racereadpc(c.raceaddr(), cas.pc, chansendpc)
@@ -261,6 +339,7 @@ loop:
 				goto bufsend
 			}
 
+		// 3: default 的 select case 语句块
 		case caseDefault:
 			dfli = casi
 			dfl = cas
@@ -500,12 +579,21 @@ func (c *hchan) sortkey() uintptr {
 	return uintptr(unsafe.Pointer(c))
 }
 
+/**
+// runtimeSelect 是传递给rselect的单个案例。
+// 必须匹配../reflect/value.go:/runtimeSelect
+ */
 // A runtimeSelect is a single case passed to rselect.
 // This must match ../reflect/value.go:/runtimeSelect
 type runtimeSelect struct {
+
+	// select case 的 方向
 	dir selectDir
 	typ unsafe.Pointer // channel type (not used here)
+
+	// 这个是 当前 select 的 case 中的 chan 引用
 	ch  *hchan         // channel
+
 	val unsafe.Pointer // ptr to data (SendDir) or ptr to receive buffer (RecvDir)
 }
 
@@ -519,28 +607,51 @@ const (
 	selectDefault           // default
 )
 
+// select 关键字的执行对外的 入口
 //go:linkname reflect_rselect reflect.rselect
 func reflect_rselect(cases []runtimeSelect) (int, bool) {
 	if len(cases) == 0 {
 		block()
 	}
+
+	// 旧版本中还有 `hselect` 结构 和 `scase` 结构
+	//	然后 sel 使用了  malloc 函数去开启 hselect 结构的内存
+	//	最后通过 selectsend()、selectrecv()、selectdefault() 分别将 代表 select 的 case 和default 的 `scase` 注册到 `hselect`
+	//
+	//	而 新的实现已经移除了 `hselect` 结构, 只保留了 `scase` 结构.
+	// 	在注册 select case 语句块时, 直接通过下面的 `sel := make([]scase, len(cases))`
+	// 	然后逐个 将 `scase` 加到里头
 	sel := make([]scase, len(cases))
-	order := make([]uint16, 2*len(cases))
+	order := make([]uint16, 2*len(cases))	// order0为一个两倍cas0数组长度的buffer， 保存scase随机序列 pollorder 和 scase中channel地址序列 lockorder, todo 看我的博客知道旧的实现中 pollorder 和 lockorder 分别是啥了
+
+	// 遍历 所有 case及default 语句实例
 	for i := range cases {
+
+		// 取出 每一个 case 和 default 语句块
 		rc := &cases[i]
+
+		// 判断 case 中 chan 的方向
 		switch rc.dir {
+
+		// default 语句块
 		case selectDefault:
 			sel[i] = scase{kind: caseDefault}
+
+		// case chan <- obj 发送通道语句块
 		case selectSend:
 			sel[i] = scase{kind: caseSend, c: rc.ch, elem: rc.val}
+
+		// case obj <- chan 接收通道语句块
 		case selectRecv:
 			sel[i] = scase{kind: caseRecv, c: rc.ch, elem: rc.val}
 		}
+
 		if raceenabled || msanenabled {
 			selectsetpc(&sel[i])
 		}
 	}
 
+	// 去执行 select 语句
 	return selectgo(&sel[0], &order[0], len(cases))
 }
 

@@ -24,6 +24,13 @@ const (
 	tflagRegularMemory tflag = 1 << 3 // equal and hash can treat values of this type as a single region of t.size bytes
 )
 
+
+/**
+//	需要与../cmd/link/internal/ld/decodesym.go:/^func.commonsize同步，
+//	 ../cmd/compile/internal/gc/reflect.go:/^func.dcommontype和
+//	 ../reflect/type.go:/^type.rtype。
+//	 ../internal/reflectlite/type.go:/^type.rtype。
+ */
 // Needs to be in sync with ../cmd/link/internal/ld/decodesym.go:/^func.commonsize,
 // ../cmd/compile/internal/gc/reflect.go:/^func.dcommontype and
 // ../reflect/type.go:/^type.rtype.
@@ -362,13 +369,25 @@ type interfacetype struct {
 	mhdr    []imethod
 }
 
+// 定义 map 的类型
 type maptype struct {
+
+	// 整个 map 的类型
 	typ    _type
+	// map 的 key 的类型
 	key    *_type
+	// val 类型??
 	elem   *_type
+
+	// 代表哈希桶的内部类型
 	bucket *_type // internal type representing a hash bucket
+
+
 	// function for hashing keys (ptr to key, seed) -> hash
+	//
+	// 散列键（点到键，种子）的函数->散列
 	hasher     func(unsafe.Pointer, uintptr) uintptr
+
 	keysize    uint8  // size of key slot
 	elemsize   uint8  // size of elem slot
 	bucketsize uint16 // size of bucket

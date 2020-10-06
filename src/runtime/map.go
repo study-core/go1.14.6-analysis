@@ -112,23 +112,41 @@ func isEmpty(x uint8) bool {
 }
 
 // A header for a Go map.
+//
+// 这个是 map 的定义
 type hmap struct {
 	// Note: the format of the hmap is also encoded in cmd/compile/internal/gc/reflect.go.
 	// Make sure this stays in sync with the compiler's definition.
+	//
+	// 注意: hmap 的格式也编码在 `cmd/compile/internal/gc/reflect.go` 中.
+	//
+	// 确保它与编译器的定义保持同步
+
+	// map 的大小, k-v 的数目, len() 函数使用
 	count     int // # live cells == size of map.  Must be first (used by len() builtin)
+
+	//
 	flags     uint8
+
+	// 桶数 的 log_2（最多可容纳loadFactor * 2 ^ B个项目）
+	// 这个B一定程度上表示的就是桶的数量，当然不是说B是3桶的数量就是3，而是2的3次方，也就是8；当B为5，桶的数量就是32；记住这个B，后面会用到它
 	B         uint8  // log_2 of # of buckets (can hold up to loadFactor * 2^B items)
 	noverflow uint16 // approximate number of overflow buckets; see incrnoverflow for details
 	hash0     uint32 // hash seed
 
+	// 这个是 map 中各个 bucket 数组的头指针
 	buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
 	oldbuckets unsafe.Pointer // previous bucket array of half the size, non-nil only when growing
+
+	// 疏散进度计数器（已撤离小于此值的存储桶）
 	nevacuate  uintptr        // progress counter for evacuation (buckets less than this have been evacuated)
 
 	extra *mapextra // optional fields
 }
 
 // mapextra holds fields that are not present on all maps.
+//
+// mapextra 包含并非在所有 map 上都显示的字段
 type mapextra struct {
 	// If both key and elem do not contain pointers and are inline, then we mark bucket
 	// type as containing no pointers. This avoids scanning such maps.
@@ -138,10 +156,21 @@ type mapextra struct {
 	// overflow contains overflow buckets for hmap.buckets.
 	// oldoverflow contains overflow buckets for hmap.oldbuckets.
 	// The indirection allows to store a pointer to the slice in hiter.
+
+	/**
+	//	如果key和elem都不包含指针并且是内联的，则我们将存储桶类型标记为不包含指针。 这样可以避免扫描此类map
+	//	但是，`bmap.overflow`是一个指针。 为了使溢出桶保持活动状态，我们将指向所有“溢出桶”的指针存储在“ hmap.extra.overflow”和“ hmap.extra.oldoverflow”中。
+	//	仅当key和elem不包含指针时，才使用`overflow`和`oldoverflow`。
+	//	`overflow`包含`hmap.buckets`的溢出桶。
+	//	`oldoverflow`包含`hmap.oldbuckets`的溢出桶。
+	//	间接允许在 hiter 中存储指向切片的指针。
+	 */
 	overflow    *[]*bmap
 	oldoverflow *[]*bmap
 
 	// nextOverflow holds a pointer to a free overflow bucket.
+	//
+	// nextOverflow拥有一个指向空闲溢出桶的指针
 	nextOverflow *bmap
 }
 
@@ -289,6 +318,11 @@ func makemap64(t *maptype, hint int64, h *hmap) *hmap {
 // makemap_small implements Go map creation for make(map[k]v) and
 // make(map[k]v, hint) when hint is known to be at most bucketCnt
 // at compile time and the map needs to be allocated on the heap.
+/**
+// makemap_small为make（map [k] v）和
+// make（map [k] v，hint），当提示最多为bucketCnt时
+// 在编译时，需要在堆上分配映射。
+ */
 func makemap_small() *hmap {
 	h := new(hmap)
 	h.hash0 = fastrand()
@@ -300,6 +334,13 @@ func makemap_small() *hmap {
 // can be created on the stack, h and/or bucket may be non-nil.
 // If h != nil, the map can be created directly in h.
 // If h.buckets != nil, bucket pointed to can be used as the first bucket.
+/**
+// makemap为make（map [k] v，hint）实现Go map 创建。
+//如果编译器已确定该映射或第一个存储桶
+//可以在堆栈上创建，h和/或bucket可以为非nil。
+//如果h！= nil，则可以直接在h中创建地图。
+//如果h.buckets！= nil，则指向的存储桶可以用作第一个存储桶。
+ */
 func makemap(t *maptype, hint int, h *hmap) *hmap {
 	mem, overflow := math.MulUintptr(uintptr(hint), t.bucket.size)
 	if overflow || mem > maxAlloc {
@@ -391,6 +432,13 @@ func makeBucketArray(t *maptype, b uint8, dirtyalloc unsafe.Pointer) (buckets un
 // the key is not in the map.
 // NOTE: The returned pointer may keep the whole map live, so don't
 // hold onto it for very long.
+/**
+todo 查询 map 的方法
+// mapaccess1返回指向  h[key]  的指针。 从不返回nil，而是
+//	如果满足以下条件，它将返回对elem类型的 零值的引用
+//	该键不在 map中。
+//	注意：返回的指针可能会使整个 map 保持活动状态，因此请不要坚持很长时间。
+ */
 func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if raceenabled && h != nil {
 		callerpc := getcallerpc()
@@ -410,9 +458,9 @@ func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if h.flags&hashWriting != 0 {
 		throw("concurrent map read and map write")
 	}
-	hash := t.hasher(key, uintptr(h.hash0))
-	m := bucketMask(h.B)
-	b := (*bmap)(add(h.buckets, (hash&m)*uintptr(t.bucketsize)))
+	hash := t.hasher(key, uintptr(h.hash0))    	//  计算key 的 hash 值
+	m := bucketMask(h.B)						//  通过 B 计算要去后 几位?? 如: B 是 4 时, m 是 1111
+	b := (*bmap)(add(h.buckets, (hash&m)*uintptr(t.bucketsize))) 	// 通过 ·与·  远算， `hash & m` 取出最后几位, 然后移动指针到对应 bucket (桶) 位置
 	if c := h.oldbuckets; c != nil {
 		if !h.sameSizeGrow() {
 			// There used to be half as many buckets; mask down one more power of two.
@@ -423,11 +471,11 @@ func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 			b = oldb
 		}
 	}
-	top := tophash(hash)
+	top := tophash(hash)		// 取出 key 的钱8位 作为 tophash
 bucketloop:
 	for ; b != nil; b = b.overflow(t) {
-		for i := uintptr(0); i < bucketCnt; i++ {
-			if b.tophash[i] != top {
+		for i := uintptr(0); i < bucketCnt; i++ { // 循环 当前 桶的 每个格子, 如果当前没找到key , 就去 溢出桶找
+			if b.tophash[i] != top {		// 快速的对比 tophash
 				if b.tophash[i] == emptyRest {
 					break bucketloop
 				}
@@ -437,7 +485,7 @@ bucketloop:
 			if t.indirectkey() {
 				k = *((*unsafe.Pointer)(k))
 			}
-			if t.key.equal(key, k) {
+			if t.key.equal(key, k) {	// 最终还是需要对比 整个 key 的hash 是否一致
 				e := add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.elemsize))
 				if t.indirectelem() {
 					e = *((*unsafe.Pointer)(e))
@@ -568,6 +616,9 @@ func mapaccess2_fat(t *maptype, h *hmap, key, zero unsafe.Pointer) (unsafe.Point
 }
 
 // Like mapaccess, but allocates a slot for the key if it is not present in the map.
+//
+// 这个是 map[key] = val 的 put 方法,
+//	与 `mapaccess` 类似，但是如果地图中不存在密钥，则为该密钥分配一个插槽。
 func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if h == nil {
 		panic(plainError("assignment to entry in nil map"))
@@ -1014,6 +1065,7 @@ func mapclear(t *maptype, h *hmap) {
 	h.flags &^= hashWriting
 }
 
+// map 的 扩容 函数
 func hashGrow(t *maptype, h *hmap) {
 	// If we've hit the load factor, get bigger.
 	// Otherwise, there are too many overflow buckets,
@@ -1101,6 +1153,7 @@ func (h *hmap) oldbucketmask() uintptr {
 	return h.noldbuckets() - 1
 }
 
+// 扩容
 func growWork(t *maptype, h *hmap, bucket uintptr) {
 	// make sure we evacuate the oldbucket corresponding
 	// to the bucket we're about to use
@@ -1125,6 +1178,7 @@ type evacDst struct {
 	e unsafe.Pointer // pointer to current elem storage
 }
 
+// evacuate 是搬运方法，这边可以看到，每次搬运是1到2个
 func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 	b := (*bmap)(add(h.oldbuckets, oldbucket*uintptr(t.bucketsize)))
 	newbit := h.noldbuckets()
@@ -1267,6 +1321,9 @@ func advanceEvacuationMark(h *hmap, t *maptype, newbit uintptr) {
 
 //go:linkname reflect_makemap reflect.makemap
 func reflect_makemap(t *maptype, cap int) *hmap {
+
+	// 使用 反射 make  map
+
 	// Check invariants and reflects math.
 	if t.key.equal == nil {
 		throw("runtime.reflect_makemap: unsupported map key type")

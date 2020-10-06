@@ -29,6 +29,7 @@ const (
 	debugChan = false
 )
 
+// chan 类型结构定义
 type hchan struct {
 	qcount   uint           // total data in the queue
 	dataqsiz uint           // size of the circular queue
@@ -50,9 +51,10 @@ type hchan struct {
 	lock mutex
 }
 
+// 这是一个 goroutine 的 等待队列 的实现
 type waitq struct {
-	first *sudog
-	last  *sudog
+	first *sudog		// 队列头 g
+	last  *sudog		// 队列尾 g
 }
 
 //go:linkname reflect_makechan reflect.makechan

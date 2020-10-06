@@ -15,6 +15,8 @@ const tmpStringBufSize = 32
 
 type tmpBuf [tmpStringBufSize]byte
 
+// 这是 string  拼接的 函数
+//
 // concatstrings implements a Go string concatenation x+y+z+...
 // The operands are passed in the slice a.
 // If buf != nil, the compiler has determined that the result does not
@@ -22,7 +24,7 @@ type tmpBuf [tmpStringBufSize]byte
 // if small enough.
 func concatstrings(buf *tmpBuf, a []string) string {
 	idx := 0
-	l := 0
+	l := 0		// 拼接后总的字符串长度
 	count := 0
 	for i, x := range a {
 		n := len(x)
@@ -46,9 +48,9 @@ func concatstrings(buf *tmpBuf, a []string) string {
 	if count == 1 && (buf != nil || !stringDataOnStack(a[idx])) {
 		return a[idx]
 	}
-	s, b := rawstringtmp(buf, l)
+	s, b := rawstringtmp(buf, l)  	// 生成指定大小的字符串，返回一个string和切片，二者共享内存空间
 	for _, x := range a {
-		copy(b, x)
+		copy(b, x)					// string 无法修改，只能通过切片修改
 		b = b[len(x):]
 	}
 	return s
@@ -215,9 +217,10 @@ func slicerunetostring(buf *tmpBuf, a []rune) string {
 	return s[:size2]
 }
 
+// string 类型 数据结构定义
 type stringStruct struct {
-	str unsafe.Pointer
-	len int
+	str unsafe.Pointer		// 	字符串 首地址
+	len int					//	字符串 长度
 }
 
 // Variant with *byte pointer type for DWARF debugging.
@@ -469,10 +472,14 @@ func findnullw(s *uint16) int {
 	return l
 }
 
+// 根据 字符串地址 构建出 string
+//
+// string在runtime包中就是stringStruct，对外呈现叫做string .
+//
 //go:nosplit
 func gostringnocopy(str *byte) string {
-	ss := stringStruct{str: unsafe.Pointer(str), len: findnull(str)}
-	s := *(*string)(unsafe.Pointer(&ss))
+	ss := stringStruct{str: unsafe.Pointer(str), len: findnull(str)}			// 先构造 stringStruct 实例
+	s := *(*string)(unsafe.Pointer(&ss))										// 然后 stringStruct 转成 string
 	return s
 }
 
