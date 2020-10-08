@@ -26,6 +26,7 @@ import (
 )
 
 // Asynchronous semaphore for sync.Mutex.
+// 用于sync.Mutex的异步信号量
 
 // A semaRoot holds a balanced tree of sudog with distinct addresses (s.elem).
 // Each of those sudog may in turn point (through s.waitlink) to a list
@@ -37,6 +38,11 @@ import (
 // See golang.org/issue/17953 for a program that worked badly
 // before we introduced the second level of list, and test/locklinear.go
 // for a test that exercises this.
+
+// semaRoot 拥有一个具有不同地址（s.elem）的sudog平衡树
+//	每个sudog都可以依次（通过s.waitlink）指向在同一地址上等待的其他sudog列表。
+//	对具有相同地址的sudog内部列表进行的操作均为O（1）。 顶层semaRoot列表的扫描为O（log n），其中n是在其上阻止了goroutine并散列到给定semaRoot的不同地址的数量
+//	请参阅golang.org/issue/17953，了解在引入第二级列表之前运行不佳的程序，以及test / locklinear.go，了解用于执行此功能的测试的信息
 type semaRoot struct {
 	lock  mutex
 	treap *sudog // root of balanced tree of unique waiters.
@@ -61,11 +67,13 @@ func poll_runtime_Semacquire(addr *uint32) {
 	semacquire1(addr, false, semaBlockProfile, 0)
 }
 
+// todo 信号量 去释放 当前 g
 //go:linkname sync_runtime_Semrelease sync.runtime_Semrelease
 func sync_runtime_Semrelease(addr *uint32, handoff bool, skipframes int) {
 	semrelease1(addr, handoff, skipframes)
 }
 
+// todo 信号量 去阻塞 当前 g
 //go:linkname sync_runtime_SemacquireMutex sync.runtime_SemacquireMutex
 func sync_runtime_SemacquireMutex(addr *uint32, lifo bool, skipframes int) {
 	semacquire1(addr, lifo, semaBlockProfile|semaMutexProfile, skipframes)
@@ -95,6 +103,7 @@ func semacquire(addr *uint32) {
 	semacquire1(addr, false, 0, 0)
 }
 
+// todo 阻塞 信号量
 func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags, skipframes int) {
 	gp := getg()
 	if gp != gp.m.curg {
@@ -156,6 +165,8 @@ func semrelease(addr *uint32) {
 	semrelease1(addr, false, 0)
 }
 
+
+// todo 释放 信号量
 func semrelease1(addr *uint32, handoff bool, skipframes int) {
 	root := semroot(addr)
 	atomic.Xadd(addr, 1)
@@ -611,6 +622,7 @@ func notifyListCheck(sz uintptr) {
 	}
 }
 
+// todo 获取系统纳秒时间戳
 //go:linkname sync_nanotime sync.runtime_nanotime
 func sync_nanotime() int64 {
 	return nanotime()

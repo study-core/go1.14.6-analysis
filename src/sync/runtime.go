@@ -64,4 +64,6 @@ func runtime_canSpin(i int) bool
 // runtime_doSpin does active spinning.
 func runtime_doSpin()
 
+// 获取系统纳秒时间戳
+// 在 `sema.go 的 sync_nanotime() 实现`
 func runtime_nanotime() int64

@@ -5310,7 +5310,8 @@ func sync_atomic_runtime_procUnpin() {
 	procUnpin()
 }
 
-// Active spinning for sync.Mutex.
+// todo 当前g是否可以自旋
+// Active spinning for sync.Mutex.  为了 sync.Muitex 而作的 主动 自旋
 //go:linkname sync_runtime_canSpin sync.runtime_canSpin
 //go:nosplit
 func sync_runtime_canSpin(i int) bool {
@@ -5319,15 +5320,26 @@ func sync_runtime_canSpin(i int) bool {
 	// GOMAXPROCS>1 and there is at least one other running P and local runq is empty.
 	// As opposed to runtime mutex we don't do passive spinning here,
 	// because there can be work on global runq or on other Ps.
+	/**
+		sync.Mutex 是协作的，因此我们对旋转保持保守限制:
+
+	 	仅 自旋了几次，并且仅在多核计算机上运行且 GOMAXPROCS> 1 并且 至少有一个其他正在运行的 P 并且本地 runq 为空时 当前 goroutine 才可以做自旋
+	 	runtime 的 互斥锁(mutex) 相反，我们在这里不进行被动旋转，因为可以在 全局runq 或 其他P上进行工作
+	 */
+
+	 // 【自旋次数 > 4】 或者 【cpu核数 <= 1】 或者 【gomaxprocs <= 1】 时, 不可 自旋了
 	if i >= active_spin || ncpu <= 1 || gomaxprocs <= int32(sched.npidle+sched.nmspinning)+1 {
 		return false
 	}
+
+	// 当前 g 对应的 p中的 runq 不为 空时, 也不能 自旋了
 	if p := getg().m.p.ptr(); !runqempty(p) {
 		return false
 	}
 	return true
 }
 
+// todo 进行当前g的自旋
 //go:linkname sync_runtime_doSpin sync.runtime_doSpin
 //go:nosplit
 func sync_runtime_doSpin() {

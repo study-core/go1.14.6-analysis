@@ -227,9 +227,10 @@ func selectgo(cas0 *scase, order0 *uint16, ncases int) (int, bool) {
 	// simple heap sort, to guarantee n log n time and constant stack footprint.
 	//
 	//	通过 `hchan` 地址 对 case 进行排序以获得锁定顺序
-	//	简单的 堆排序，以确保 O(N log N) 个时间 和 恒定的堆栈占用量
+	//	简单的 【堆排序】，以确保 O(N log N) 个时间 和 恒定的堆栈占用量   todo  堆排 主要还是为了 做 chan 去重的
 	//
 	// todo 【重要】 对 所有的 case 中的 chan 做需要加锁标识,  下面会统一去上锁的
+	//						todo 【细节】对 chan 上锁时 需要做去重动作, 因为 可能多个 case 中引用的 chan 是同一个, 不能重复上锁
 	for i := 0; i < ncases; i++ {
 		j := i
 		// Start with the pollorder to permute cases on the same channel.
