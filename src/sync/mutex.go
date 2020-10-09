@@ -212,12 +212,14 @@ func (m *Mutex) lockSlow() {
 		 */
 		// todo 下面是 判断 当前 g  是否需要 进入 自旋状态
 		 // 如果 只有被锁状态 且 可以 当前来获取 mutex 的 g 可以自旋 时, 我们进行 当前 g 的自旋
+		 //
+		 // todo 只有 不是 【饥饿】 且 已被锁定 且 可以自旋 时,  才做 自旋
 		if old&(mutexLocked|mutexStarving) == mutexLocked && runtime_canSpin(iter) {
 			// Active spinning makes sense.
 			// Try to set mutexWoken flag to inform Unlock
 			// to not wake other blocked goroutines.
 			/**
-			主动旋转是有意义的。试着设置 mutexWoken （锁唤醒）标志，告知解锁，不唤醒其他阻塞的goroutines
+			todo 主动 自旋 是有意义的。试着设置 mutexWoken （锁唤醒）标志，告知解锁，不唤醒其他阻塞的goroutines
 			 */
 			// old&mutexWoken == 0 再次确定是否被唤醒： xxxx...xx0x & 0010 = 0
 			// old>>mutexWaiterShift != 0 查看是否有goroution在排队
@@ -231,6 +233,8 @@ func (m *Mutex) lockSlow() {
 
 			 // CompareAndSwapInt32函数 在被调用之后会先判断参数addr指向的被操作值与参数old的值是否相等.
 			 // 仅当此判断得到肯定的结果之后，该函数才会用参数new代表的新值替换掉原先的旧值。否则，后面的替换操作就会被忽略.
+			 //
+			 // todo 如果当前 g 不是 刚被唤醒, 且 等待队列中有 g, 则 将当前 g 设置为 唤醒, 而不通知 其他 等待队列中的 g         (就是 优先 让自己 获取锁)
 			if !awoke && old&mutexWoken == 0 && old>>mutexWaiterShift != 0 &&
 				atomic.CompareAndSwapInt32(&m.state, old, old|mutexWoken) {
 				awoke = true     // todo  当前g 被唤醒, 且 mutex 追加了 【被唤醒 标识】,  这些都会在 下面 被清除掉
@@ -349,10 +353,10 @@ func (m *Mutex) lockSlow() {
 
 
 			/**
-			 todo 如果old state的状态是未被锁状态，并且锁不处于饥饿状态,
-             todo 那么当前goroutine已经获取了锁的拥有权，返回
+			 todo 如果old state的状态是  未被锁状态，并且锁   未饥饿状态,
+             todo 那么当前goroutine 可以追加到队列 末尾了
 			 */
-			// xxxx...x0x0 & 0101 = 0，表示可以获取对象锁 （即 还是判断之前的状态，锁不是饥饿 也不是被锁定， 所已经可用了, 当前 g 直接抢到 锁, 结束流程）
+			// xxxx...x0x0 & 0101 = 0，表示可以获取对象锁 （即 还是判断之前的状态，锁不是饥饿 也不是被锁定， 将当前 g 追加到队列末尾, 结束流程）
 
 			if old&(mutexLocked|mutexStarving) == 0 {
 				break // locked the mutex with CAS
@@ -537,7 +541,7 @@ func (m *Mutex) unlockSlow(new int32) {
 			// So get off the way.
 			//
 			//
-			// 如果没有等待的goroutine或 goroutine不处于空闲 (goroutine已经被唤醒 或 抓住了锁 或 正在饥饿)，则无需唤醒 其他任何 g
+			// 如果 没有等待的goroutine或 goroutine不处于空闲 (goroutine已经被唤醒 或 抓住了锁 或 正在饥饿)，则无需唤醒 其他任何 g
 			// 在饥饿模式下，锁的所有权直接从解锁goroutine交给下一个 正在等待的goroutine (等待队列中的第一个)。
 			//
 			//
