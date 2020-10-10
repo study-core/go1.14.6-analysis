@@ -284,6 +284,18 @@ func goschedguarded() {
 // It is displayed in stack traces and heap dumps.
 // Reasons should be unique and descriptive.
 // Do not re-use reasons, add new ones.
+//
+//
+//
+// 将当前goroutine置于【等待状态】，并且调用 unlockf 函数。
+// 如果 `unlockf()` 返回false，则继续执行goroutine。
+// `unlockf()` 一定不能访问此 G 的堆栈，因为它可能在调用 `gopark()`和调用 `unlockf()` 之间移动。
+// 说明了 为什么 goroutine已 parked 的原因。
+// 它显示在堆栈跟踪 和 堆转储中。
+// 原因应具有唯一性和描述性。
+// 不要重复使用原因，请添加新的原因。
+//
+// 把当前的 goroutine 改为【等待状态】，并且调用 unlockf 函数，如果函数返回 flase，则当前 g 被恢复
 func gopark(unlockf func(*g, unsafe.Pointer) bool, lock unsafe.Pointer, reason waitReason, traceEv byte, traceskip int) {
 	if reason != waitReasonSleep {
 		checkTimeouts() // timeouts may expire while two goroutines keep the scheduler busy
@@ -295,17 +307,22 @@ func gopark(unlockf func(*g, unsafe.Pointer) bool, lock unsafe.Pointer, reason w
 		throw("gopark: bad g status")
 	}
 	mp.waitlock = lock
+
+	// todo 记住： unlockf 永远返回 true
 	mp.waitunlockf = unlockf
 	gp.waitreason = reason
 	mp.waittraceev = traceEv
 	mp.waittraceskip = traceskip
 	releasem(mp)
 	// can't do anything that might move the G between Ms here.
-	mcall(park_m)
+	mcall(park_m)   // macll 会先切换成 g0，并把当前 g 作为参数调用 park_m
 }
 
 // Puts the current goroutine into a waiting state and unlocks the lock.
 // The goroutine can be made runnable again by calling goready(gp).
+//
+// 将 当前goroutine置于 【等待状态】 并解锁 lock
+// 通过调用 goready（gp），可以使goroutine再次可运行
 func goparkunlock(lock *mutex, reason waitReason, traceEv byte, traceskip int) {
 	gopark(parkunlock_c, unsafe.Pointer(lock), reason, traceEv, traceskip)
 }
@@ -457,7 +474,9 @@ func lockedOSThread() bool {
 	return gp.lockedm != 0 && gp.m.lockedg != 0
 }
 
+// todo  三个全局的列表主要为了统计运行时系统的的所有G、M、P
 var (
+	// runtime 的 全局 G 队列 (存放所有 G 指针) todo 新建的G会先放到这个全局的G列表中，其列表的作用也是集中放置了当前运行时系统中给所有的G的指针
 	allgs    []*g
 	allglock mutex
 )
@@ -663,6 +682,7 @@ func ready(gp *g, traceskip int, next bool) {
 	status := readgstatus(gp)
 
 	// Mark runnable.
+	// 此刻的  `_g_` 不是 `gp`
 	_g_ := getg()
 	mp := acquirem() // disable preemption because it can be holding p in a local var
 	if status&^_Gscan != _Gwaiting {
@@ -672,8 +692,10 @@ func ready(gp *g, traceskip int, next bool) {
 
 	// status is Gwaiting or Gscanwaiting, make Grunnable and put on runq
 	casgstatus(gp, _Gwaiting, _Grunnable)
+
+	// 把 g 放到 p 本地队列，next 为 true， 就放在下一个执行， next 为 false，放在队尾
 	runqput(_g_.m.p.ptr(), gp, next)
-	if atomic.Load(&sched.npidle) != 0 && atomic.Load(&sched.nmspinning) == 0 {
+	if atomic.Load(&sched.npidle) != 0 && atomic.Load(&sched.nmspinning) == 0 {  // TODO 这个看了调度代码再解释
 		wakep()
 	}
 	releasem(mp)
@@ -2671,17 +2693,26 @@ func parkunlock_c(gp *g, lock unsafe.Pointer) bool {
 }
 
 // park continuation on g0.
+//
+// 在 g0 上继续 park
+//
+// park_m 执行之后，调度器就调度并执行其他的 g， 之前的 gp 也就等待了
 func park_m(gp *g) {
+
+	// 当前 g 是 g0
 	_g_ := getg()
 
 	if trace.enabled {
 		traceGoPark(_g_.m.waittraceev, _g_.m.waittraceskip)
 	}
 
+	// 设置参数 g 的状态
 	casgstatus(gp, _Grunning, _Gwaiting)
+	// 删除参数 g 和 m 的关系
 	dropg()
 
 	if fn := _g_.m.waitunlockf; fn != nil {
+		// 执行解锁操作， 假如是从 sema 过来的，fn 永远返回 true
 		ok := fn(gp, _g_.m.waitlock)
 		_g_.m.waitunlockf = nil
 		_g_.m.waitlock = nil
@@ -2693,6 +2724,8 @@ func park_m(gp *g) {
 			execute(gp, true) // Schedule it back, never returns.
 		}
 	}
+
+	// 调度其他的 g 执行
 	schedule()
 }
 
@@ -2767,6 +2800,12 @@ func preemptPark(gp *g) {
 // goyield is like Gosched, but it:
 // - emits a GoPreempt trace event instead of a GoSched trace event
 // - puts the current G on the runq of the current P instead of the globrunq
+//
+// goyield 类似于Gosched，但它：
+//		-发出GoPreempt跟踪事件，而不是GoSched跟踪事件
+//		-将当前G放在当前P的runq上，而不是globrunq
+//
+// goyield 调用 mcall 执行 goyield_m， goyield_m 会把当前的 g 放到 p 本地对象的队尾， 然后执行调度器
 func goyield() {
 	checkTimeouts()
 	mcall(goyield_m)
