@@ -29,6 +29,10 @@ const (
 	maxPhysHugePageSize = pallocChunkBytes
 )
 
+// todo 内存分配, 堆结构定义   heap结构定义
+//
+//	每个mcentral对象只管理特定的class规格的span。 事实上每种class都会对应一个 mcentral,这个mcentral的集合存放于mheap数据结构中
+//
 // Main malloc heap.
 // The heap itself is the "free" and "scav" treaps,
 // but all the other global data is here too.
@@ -36,14 +40,31 @@ const (
 // mheap must not be heap-allocated because it contains mSpanLists,
 // which must not be heap-allocated.
 //
+// 主 malloc堆
+// 堆本身就是 "free" 和 "scav" 的 treaps ，但是所有其他全局数据也都在这里.
+//
+// 不能对mheap进行堆分配，因为它包含 `mSpanLists`，该mSpanLists不能进行堆分配.
+//
+// todo 从数据结构可见， mheap管理着全部的内存， 事实上Golang 就是通过一个 mheap 类型的全局变量 进行内存管理的
+//
 //go:notinheap
 type mheap struct {
 	// lock must only be acquired on the system stack, otherwise a g
 	// could self-deadlock if its stack grows with the lock held.
+	//
+	// 必须仅在系统堆栈上获取锁，否则 如果 G 的堆栈在持有锁的情况下增长，则 g 可能会自锁
 	lock      mutex
+
+	// 页面分配数据结构
 	pages     pageAlloc // page allocation data structure
+
+	// 扫描生成，请参见mspan中的注释; 在 `STW` 期间 写
 	sweepgen  uint32    // sweep generation, see comment in mspan; written during STW
+
+	// 完成了 扫描所有的 span 的标识位
 	sweepdone uint32    // all spans are swept
+
+	// 活动的 `sweepone` 调用数
 	sweepers  uint32    // number of active sweepone calls
 
 	// allspans is a slice of all mspans ever created. Each mspan
@@ -57,7 +78,19 @@ type mheap struct {
 	// store. Accesses during STW might not hold the lock, but
 	// must ensure that allocation cannot happen around the
 	// access (since that may free the backing store).
-	allspans []*mspan // all spans out there
+	//
+	//
+	// todo 存 所有 span
+	//
+	// allspans 是曾经创建的所有 `mspan` 的一部分。 每个 `mspan` 仅出现一次
+	//
+	// allspan 的内存是手动管理的，可以随着堆的增长而重新分配和移动。
+	//
+	// 通常，allspans 受 mheap_.lock保护，这可以防止并发访问以及释放后备存储。
+	// STW期间的访问可能不持有该锁，但必须确保在访问周围不会发生分配（因为这可能释放后备存储）。
+	//
+	//
+	allspans []*mspan // all spans out there   全部 span  都在这里
 
 	// sweepSpans contains two mspan stacks: one of swept in-use
 	// spans, and one of unswept in-use spans. These two trade
@@ -68,9 +101,19 @@ type mheap struct {
 	// unswept stack and pushes spans that are still in-use on the
 	// swept stack. Likewise, allocating an in-use span pushes it
 	// on the swept stack.
+	//
+	//
+	// scanSpans 包含两个 `mspan`堆栈：
+	// 			一个是扫掠的使用范围，
+	// 			另一个是未扫掠的使用范围。
+	// 	在每个GC周期中，这两个 `交易角色`。
+	// 	由于扫掠根在每个周期上增加2，这意味着扫掠 spans 以 sweepSpans[sweepgen/2%2] 为单位，而未扫掠 spans 以 sweepSpans[1-sweepgen/2%2] 为单位。
+	//  从未扫描的堆栈中扫出持久性 spans ，并推送仍在扫描的堆栈中使用的 spans。 同样，分配使用中的 spans  会将其压入扫掠堆栈。
+	//
+	//
 	sweepSpans [2]gcSweepBuf
 
-	// _ uint32 // align uint64 fields on 32-bit for atomics
+	// _ uint32 // align uint64 fields on 32-bit for atomics       ( _ uint32   将32位的uint64字段对齐为原子)
 
 	// Proportional sweep
 	//
@@ -90,20 +133,43 @@ type mheap struct {
 	// accounting for current progress. If we could only adjust
 	// the slope, it would create a discontinuity in debt if any
 	// progress has already been made.
+	//
+	//
+	// 比例扫描
+	//
+	// 这些参数表示从 `heap_live` 到 page 扫描计数的线性函数。
+	// 比例扫描系统 通过将 当前 page 扫描计数 保持在 当前 `heap_live` 的这一行之上，从而保持黑色状态。
+	//
+	// 该行的坡度 (倾斜度) 为sweepPagesPerByte，并通过（sweepHeapLiveBasis，pagesSweptBasis）的基点。
+	// 在任何给定时间，系统都位于此空间中的（memstats.heap_live，pagesSwept）。
+	//
+	// 重要的是，线要通过我们控制的点，而不是简单地从（0,0）起点开始，
+	// 因为这可以让我们在考虑当前进度的同时随时调整扫描步调。
+	// 如果我们只能调整斜率，那么如果已经取得了任何进展，它将造成债务的不连续性。
+	//
+	//
+
+	// 统计信息中的 spans page 的 mSpanInUse; 原子更新
 	pagesInUse         uint64  // pages of spans in stats mSpanInUse; updated atomically
+	// 这个周期 中被扫描的 page 数;  原子更新
 	pagesSwept         uint64  // pages swept this cycle; updated atomically
+	// pagesSweep 用作扫描率的来源; 原子更新
 	pagesSweptBasis    uint64  // pagesSwept to use as the origin of the sweep ratio; updated atomically
+	// heap_live 的值用作扫描比率的来源; 带锁写，不带读
 	sweepHeapLiveBasis uint64  // value of heap_live to use as the origin of sweep ratio; written with lock, read without
+	// 比例扫描率 带锁写，不带读
 	sweepPagesPerByte  float64 // proportional sweep ratio; written with lock, read without
-	// TODO(austin): pagesInUse should be a uintptr, but the 386
-	// compiler can't 8-byte align fields.
+	// TODO(austin): pagesInUse should be a uintptr, but the 386   pagesInUse应该是一个uintptr，但是386
+	// compiler can't 8-byte align fields.  编译器不能8字节对齐字段。
 
 	// scavengeGoal is the amount of total retained heap memory (measured by
 	// heapRetained) that the runtime will try to maintain by returning memory
 	// to the OS.
+	//
+	// scavengeGoal 是运行时通过将 内存返回给 OS 来尝试维护的总保留堆内存量（由heapRetained测量）
 	scavengeGoal uint64
 
-	// Page reclaimer state
+	// Page reclaimer state   页面回收状态
 
 	// reclaimIndex is the page index in allArenas of next page to
 	// reclaim. Specifically, it refers to page (i %
@@ -113,21 +179,39 @@ type mheap struct {
 	// the page marks.
 	//
 	// This is accessed atomically.
+	//
+	//
+	// reclaimIndex 是要回收的下一页 allArenas 中的页面索引。 具体来说，它是指 arena allArenas[i/pagesPerArena]的页面 (i % pagesPerArena)
+	//
+	//	如果 是 x >= 1<<63 ，则页面取回器完成了对页面标记的扫描。
+	//
+	//	这是原子访问的。
+	//
+	//
 	reclaimIndex uint64
+
 	// reclaimCredit is spare credit for extra pages swept. Since
 	// the page reclaimer works in large chunks, it may reclaim
 	// more than requested. Any spare pages released go to this
 	// credit pool.
 	//
 	// This is accessed atomically.
+	//
+	//
+	// reclaimCredit 是多余的信用，用于扫除多余的页面。 由于页面回收器的工作量很大，
+	// 				 因此它的回收量可能超出请求的数量。 释放的所有备用页面都将进入此信用池。
+	//
+	// 这是原子访问的。
+	//
+	//
 	reclaimCredit uintptr
 
-	// Malloc stats.
-	largealloc  uint64                  // bytes allocated for large objects
-	nlargealloc uint64                  // number of large object allocations
-	largefree   uint64                  // bytes freed for large objects (>maxsmallsize)
-	nlargefree  uint64                  // number of frees for large objects (>maxsmallsize)
-	nsmallfree  [_NumSizeClasses]uint64 // number of frees for small objects (<=maxsmallsize)
+	// Malloc stats.   内存分配状态
+	largealloc  uint64                  // bytes allocated for large objects						分配给大型对象的字节
+	nlargealloc uint64                  // number of large object allocations						大对象分配的数量
+	largefree   uint64                  // bytes freed for large objects (>maxsmallsize)			大对象释放的字节数 (>maxsmallsize)
+	nlargefree  uint64                  // number of frees for large objects (>maxsmallsize)		大对象的可用次数 (>maxsmallsize)
+	nsmallfree  [_NumSizeClasses]uint64 // number of frees for small objects (<=maxsmallsize)		小物件的可用次数 (<=maxsmallsize)
 
 	// arenas is the heap arena map. It points to the metadata for
 	// the heap for every arena frame of the entire usable virtual
@@ -149,6 +233,25 @@ type mheap struct {
 	// platforms (even 64-bit), arenaL1Bits is 0, making this
 	// effectively a single-level map. In this case, arenas[0]
 	// will never be nil.
+	//
+	//
+	// todo 存所有  arena
+	//
+	// arenas 是 `堆 arena map`。 它指向整个可用虚拟地址空间中每个 arena帧的堆元数据。
+	//
+	// 使用arenaIndex来计算此数组中的索引。
+	//
+	// 对于地址空间中未被 Go堆支持的区域，arena map包含nil
+	//
+	// 修改受mheap_.lock保护. 读取时可以不加锁;
+	// 但是，在不持有锁的任何时候，给定的 条目都可以从nil变为non-nil。 （条目永远不会转换回零。）
+	//
+	// 通常，这是一个两级映射，由一个 L1映射 和 可能的许多L2映射组成。
+	// 	当有大量的 arena 框架时，这可以节省空间。
+	// 	但是，在许多平台（甚至是64位）上，arenaL1Bits为0，这实际上使它成为单级映射。
+	//   在这种情况下，arenas[0]永远不会为零。
+	//
+	//
 	arenas [1 << arenaL1Bits]*[1 << arenaL2Bits]*heapArena
 
 	// heapArenaAlloc is pre-reserved space for allocating heapArena
@@ -160,10 +263,17 @@ type mheap struct {
 	// add more heap arenas. This is initially populated with a
 	// set of general hint addresses, and grown with the bounds of
 	// actual heap arena ranges.
+	//
+	// arenaHints 是要尝试在其中添加 更多 堆 arena 的地址列表。
+	// 				最初使用一组常规 hint地址 进行填充，
+	// 				然后使用实际 堆 arena 范围的边界进行扩展。
+	//
 	arenaHints *arenaHint
 
 	// arena is a pre-reserved space for allocating heap arenas
 	// (the actual arenas). This is only used on 32-bit.
+	//
+	// arena 是用于保留 堆arenas（实际arenas）的预保留空间。 仅在32位上使用。
 	arena linearAlloc
 
 	// allArenas is the arenaIndex of every mapped arena. This can
@@ -173,38 +283,63 @@ type mheap struct {
 	// append-only and old backing arrays are never freed, it is
 	// safe to acquire mheap_.lock, copy the slice header, and
 	// then release mheap_.lock.
+	//
+	//
+	// allArenas是每个 map 的arena 的arenaIndex。 这可用于遍历地址空间。
+	//
+	//  访问受mheap_.lock保护。 但是，由于这仅是追加操作，并且永远不会释放旧的支持数组，
+	// 	因此可以安全地获取mheap_.lock，复制切片头，然后释放mheap_.lock。
+	//
+	//
 	allArenas []arenaIdx
 
 	// sweepArenas is a snapshot of allArenas taken at the
 	// beginning of the sweep cycle. This can be read safely by
 	// simply blocking GC (by disabling preemption).
+	//
+	//
+	// scanArenas 是在扫描周期开始时获取的所有Arenas的快照。 可以通过简单地阻止GC（通过禁用抢占）来安全地读取它。
 	sweepArenas []arenaIdx
 
 	// curArena is the arena that the heap is currently growing
 	// into. This should always be physPageSize-aligned.
+	//
+	// curArena 是 堆当前正在成长的 arena。 这应该始终与 physPageSize 对齐
 	curArena struct {
 		base, end uintptr
 	}
 
-	_ uint32 // ensure 64-bit alignment of central
+	_ uint32 // ensure 64-bit alignment of central    确保Central的64位对齐   todo (这种做法只是 为了使内存对齐用的, 该 uint32 空间并没有被使用, 只是空着这块内存用来和别人 做对齐的)
 
 	// central free lists for small size classes.
 	// the padding makes sure that the mcentrals are
 	// spaced CacheLinePadSize bytes apart, so that each mcentral.lock
 	// gets its own cache line.
 	// central is indexed by spanClass.
+	//
+	//
+	// todo 存 所有 central
+	//
+	//	小型类的 `central` 自由列表.
+	//	填充确保`mcentrals'隔开`CacheLinePadSize`字节，以便每个`mcentral.lock`获得自己的 缓存行.
+	//	`central` 由 `spanClass`索引.
+	//
+	// numSpanClasses = 134 = 67*2   (span 表中一共有 67 中 class)
 	central [numSpanClasses]struct {
 		mcentral mcentral
 		pad      [cpu.CacheLinePadSize - unsafe.Sizeof(mcentral{})%cpu.CacheLinePadSize]byte
-	}
+	}   // 每种class对应的两个 mcentral
 
-	spanalloc             fixalloc // allocator for span*
-	cachealloc            fixalloc // allocator for mcache*
-	specialfinalizeralloc fixalloc // allocator for specialfinalizer*
-	specialprofilealloc   fixalloc // allocator for specialprofile*
-	speciallock           mutex    // lock for special record allocators.
-	arenaHintAlloc        fixalloc // allocator for arenaHints
+	/** 各类 分配器 */
 
+	spanalloc             fixalloc // allocator for span*						span 的分配器
+	cachealloc            fixalloc // allocator for mcache*						mcache 的分配器
+	specialfinalizeralloc fixalloc // allocator for specialfinalizer*			specialfinalizer 的分配器
+	specialprofilealloc   fixalloc // allocator for specialprofile*				specialprofile 的分配器
+	speciallock           mutex    // lock for special record allocators.		用来锁定 所有特殊记录分配器
+	arenaHintAlloc        fixalloc // allocator for arenaHints					arenaHints 的分配器
+
+	// 从未设置，只是在这里将 specialfinalizer 类型强制为 DWARF
 	unused *specialfinalizer // never set, just here to force the specialfinalizer type into DWARF
 }
 
@@ -213,11 +348,18 @@ var mheap_ mheap
 // A heapArena stores metadata for a heap arena. heapArenas are stored
 // outside of the Go heap and accessed via the mheap_.arenas index.
 //
+// todo heapArena 存储 堆arena 的元数据
+//
+// heapArenas存储在Go堆之外，并可以通过 `mheap_.arenas` 索引进行访问
+//
 //go:notinheap
 type heapArena struct {
 	// bitmap stores the pointer/scalar bitmap for the words in
 	// this arena. See mbitmap.go for a description. Use the
 	// heapBits type to access this.
+	//
+	// `bitmap` 存储此 arena 中单词的 指针/标量 位图。 有关说明，请参见 mbitmap.go。 使用 heapBits 类型来访问它。
+	//
 	bitmap [heapArenaBitmapBytes]byte
 
 	// spans maps from virtual address page ID within this arena to *mspan.
@@ -231,6 +373,18 @@ type heapArena struct {
 	// known to contain in-use or stack spans. This means there
 	// must not be a safe-point between establishing that an
 	// address is live and looking it up in the spans array.
+	//
+	//
+	// 将maps 从该 arena 内的虚拟地址页面ID 跨到* mspan。
+	// 对于已分配的 spans，其页面映射到 spans本身。
+	// 对于 free spans ，只有最低和最高页面会映射到 spans本身。
+	// 内部页面映射到任意 spans。
+	// 对于从未分配的页面，span条目为nil。
+	//
+	// 修改受mheap.lock保护。 可以在不锁定的情况下执行读取，但是只能从已知包含使用中或堆栈 spans 的索引中进行读取。
+	// 这意味着在确定地址是否存在以及在spans数组中查找地址之间一定没有安全点。
+	//
+	//
 	spans [pagesPerArena]*mspan
 
 	// pageInUse is a bitmap that indicates which spans are in
@@ -239,6 +393,14 @@ type heapArena struct {
 	// span is used.
 	//
 	// Reads and writes are atomic.
+	//
+	//
+	// pageInUse是一个位图，指示 哪些 spans 处于mSpanInUse状态。
+	// 			该位图通过页码索引，但是仅使用每个 span 中与第一页相对应的位。
+	//
+	// 读写是原子的。
+	//
+	//
 	pageInUse [pagesPerArena / 8]uint8
 
 	// pageMarks is a bitmap that indicates which spans have any
@@ -254,6 +416,17 @@ type heapArena struct {
 	// TODO(austin): It would be nice if this was uint64 for
 	// faster scanning, but we don't have 64-bit atomic bit
 	// operations.
+	//
+	//
+	// pageMarks 是一个位图，指示哪些 span 上有任何标记的对象。 与pageInUse一样，仅使用每个 span 中与第一页相对应的位。
+	//
+	//	在标记期间自动完成写入。 读取是非原子且无锁的，因为它们仅在扫描期间发生（因此从不与写入竞争）。
+	//
+	//	这用于快速查找可以释放的整个范围。
+	//
+	// TODO 如果这是uint64可以进行更快的扫描，那会很好，但是我们没有64位原子位操作。
+	//
+	//
 	pageMarks [pagesPerArena / 8]uint8
 
 	// zeroedBase marks the first byte of the first page in this
@@ -266,6 +439,16 @@ type heapArena struct {
 	// address-ordered first-fit policy.
 	//
 	// Read atomically and written with an atomic CAS.
+	//
+	//
+	// `zeroedBase`标记此舞台上第一页的第一个字节，尚未使用，因此已经为零。 zeroedBase相对于竞技场基地。
+	//  单调递增，直到达到`heapArenaBytes`。
+	//
+	//  此字段足以确定是否需要将分配归零，因为页面分配器遵循地址排序的第一适配策略。
+	//
+	//  原子读取并使用原子CAS编写。
+	//
+	//
 	zeroedBase uintptr
 }
 
@@ -354,13 +537,27 @@ type mSpanList struct {
 	last  *mspan // last span in list, or nil if none
 }
 
+// todo 内存管理类型 span类
+//
+//		mspan 维护 一个个 内存块
+//
+//		go 的内存管理以 span为单位,
+//
+//		span 大小 = 页数 * 页大小     todo  (go 中的页 大小为: 8kb,  linux的 页大小定义为: 4kb)
+//
 //go:notinheap
 type mspan struct {
+
+	// 链表 后向指针， 用于将span链接起来
 	next *mspan     // next span in list, or nil if none
+	//链表 前向指针， 用于将span链接起来
 	prev *mspan     // previous span in list, or nil if none
 	list *mSpanList // For debugging. TODO: Remove.
 
+
+	// 当前 span 所管理页的起始地址， 也即所管理页的地址
 	startAddr uintptr // address of first byte of span aka s.base()
+	// 管理的页数
 	npages    uintptr // number of pages in span
 
 	manualFreeList gclinkptr // list of free objects in mSpanManual spans
@@ -383,6 +580,8 @@ type mspan struct {
 	freeindex uintptr
 	// TODO: Look up nelems from sizeclass and remove this field if it
 	// helps performance.
+	//
+	// 块个数， 也即有多少个块可供分配
 	nelems uintptr // number of object in the span.
 
 	// Cache of the allocBits at freeindex. allocCache is shifted
@@ -415,8 +614,8 @@ type mspan struct {
 	// The sweep will free the old allocBits and set allocBits to the
 	// gcmarkBits. The gcmarkBits are replaced with a fresh zeroed
 	// out memory.
-	allocBits  *gcBits
-	gcmarkBits *gcBits
+	allocBits  *gcBits		// todo 分配位图， 每一位代表一个块是否已分配      0: 未分配    1: 分配
+	gcmarkBits *gcBits		// 用于标记内存块被引用情况				0： 未被引用    1: 被引用
 
 	// sweep generation:
 	// if sweepgen == h->sweepgen - 2, the span needs sweeping
@@ -429,12 +628,18 @@ type mspan struct {
 	sweepgen    uint32
 	divMul      uint16        // for divide by elemsize - divMagic.mul
 	baseMask    uint16        // if non-0, elemsize is a power of 2, & this will get object allocation base
+
+	// 已分配块的个数  (块：class 表定义中罗列的  object)
 	allocCount  uint16        // number of allocated objects
+
+	// class表中的 class ID
 	spanclass   spanClass     // size class and noscan (uint8)
 	state       mSpanStateBox // mSpanInUse etc; accessed atomically (get/set methods)
 	needzero    uint8         // needs to be zeroed before allocation
 	divShift    uint8         // for divide by elemsize - divMagic.shift
 	divShift2   uint8         // for divide by elemsize - divMagic.shift2
+
+	// class表中的对象大小， 也即块大小
 	elemsize    uintptr       // computed from sizeclass or from npages
 	limit       uintptr       // end of data in span
 	speciallock mutex         // guards specials list
@@ -1771,6 +1976,8 @@ func freespecial(s *special, p unsafe.Pointer, size uintptr) {
 }
 
 // gcBits is an alloc/mark bitmap. This is always used as *gcBits.
+//
+// gcBits 是一个分配/标记 位图。 始终用作 *gcBits
 //
 //go:notinheap
 type gcBits uint8

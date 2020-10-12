@@ -205,11 +205,16 @@ type note struct {
 	key uintptr
 }
 
+// todo func类型定义
 type funcval struct {
-	fn uintptr
+	fn uintptr   // 指向 func 地址 的值
 	// variable-size, fn-specific data here
 }
 
+
+/**
+iface  和 eface 分别是 interface 类型的两种定义
+ */
 type iface struct {
 	tab  *itab
 	data unsafe.Pointer
@@ -457,7 +462,7 @@ type g struct {
 	// 这个是当前 goroutine 的 defer 链表的首个 defer实例
 	_defer       *_defer // innermost defer 最内在的延迟
 
-	// 运行当前 G 被用到的 M
+	// 运行当前 G 被用到的 M  todo G 里面 有 M
 	m            *m      // current m; offset known to arm liblink
 
 	// g 的调度数据, 当g中断时会保存当前的pc和rsp等值到这里, 恢复运行时会使用这里的值
@@ -533,9 +538,9 @@ type g struct {
 
 
 // todo M 的定义
-type m struct {
+type m struct {  // todo M 里面 有 P 和 G
 
-	// 用于调度的特殊g, `调度` 和 `执行系统调用` 时会切换到这个g
+	// 用于调度的特殊g, `调度` 和 `执行系统调用` 时会切换到这个g 【系统G】
 	g0      *g     // goroutine with scheduling stack
 	morebuf gobuf  // gobuf arg to morestack
 	divmod  uint32 // div/mod denominator for arm - known to liblink
@@ -561,10 +566,16 @@ type m struct {
 	id            int64
 	mallocing     int32
 	throwing      int32
+
+	// 满足 if != "" 时, 继续将 之前的 G 运行在 当前 M 上      ( 调用 `stopTheWorld()` 时, 该值 会写上 Stop 的 原因 )
 	preemptoff    string // if != "", keep curg running on this m
+
+	// 用来记录当前 M 被抢占的 计数 (多少个g抢占M的计数????)
 	locks         int32
 	dying         int32
 	profilehz     int32
+
+	// 当前 M 是否在做 【自旋】
 	spinning      bool // m is out of work and is actively looking for work
 	blocked       bool // m is blocked on a note
 	newSigstack   bool // minit on C thread called sigaltstack
@@ -641,6 +652,7 @@ type p struct {
 	syscalltick uint32     // incremented on every system call
 	sysmontick  sysmontick // last tick observed by sysmon
 
+	// todo P 中有 M
 	// 拥有这个P的M (当 P 空闲时, 该值为 `nil`)
 	m           muintptr   // back-link to associated m (nil if idle)
 
@@ -665,6 +677,7 @@ type p struct {
 
 	// todo  P 中可运行的 G 队列
 	runq     [256]guintptr
+
 	// runnext, if non-nil, is a runnable G that was ready'd by
 	// the current G and should be run next instead of what's in
 	// runq if there's time remaining in the running G's time
@@ -674,6 +687,14 @@ type p struct {
 	// unit and eliminates the (potentially large) scheduling
 	// latency that otherwise arises from adding the ready'd
 	// goroutines to the end of the run queue.
+	//
+	// `runnext`：
+	// 		如果非nil，则是一个可运行的`G`，已经由当前的G`准备好了，如果运行的G中还有剩余时间，则应该运行而不是runq中的 剩余 G的时间片。
+	// 		它将继承当前时间片中剩余的时间。 如果将一组“ goroutines”锁定在“通信等待”模式中，
+	// 		则此“ schedules”将被设置为一个单元，并消除了（潜在的）较大的调度延迟，
+	// 		否则会因将已准备好的“ goroutines”添加到“调度”而产生。 运行队列的末尾。
+	//
+	//  todo 这个放置 一个下一个 可以运行的G ??
 	runnext guintptr
 
 	// Available G's (status == Gdead)
@@ -807,6 +828,8 @@ type schedt struct {
 	// todo 调度器的 【空闲 P】 只存放 Pidle 状态的 P  （注意: Pdead 的P 只会被 GC 掉）
 	pidle      puintptr // idle p's
 	npidle     uint32
+
+	// 正在做 自旋的 M 的个数
 	nmspinning uint32 // See "Worker thread parking/unparking" comment in proc.go.
 
 	// Global runnable queue.
@@ -851,11 +874,17 @@ type schedt struct {
 	// m.exited is set. Linked through m.freelink.
 	freem *m
 
-	gcwaiting  uint32 // gc is waiting to run     gc 等待运行状态.   (作为gc任务被执行期间的辅助标记、停止计数和通知机制)
-	stopwait   int32
-	stopnote   note
-	sysmonwait uint32 // 作为 系统检测任务被执行期间的停止计数和通知机制
-	sysmonnote note
+	/**
+	下面 5 个字段是  辅助 GC 执行而存在的
+	 */
+	// 值是 1 时, 说明正在 GC, 然后调度器 停止 P 和 M
+	gcwaiting  uint32 	// gc is waiting to run     gc 等待运行状态.   (作为gc任务被执行期间的辅助标记、停止计数和通知机制)
+	// 当该值 为 0 时, 说明调度器 完全停止工作, 这是 GC就可以开始了
+	stopwait   int32	// 用来对 还未被停止调度的 P 进行计数 (GC到来时)
+	stopnote   note		// 用来向 垃圾回收器 告知 调度工作已经完全停止的 通知机制  (信号量, 用来阻塞自身 <阻塞GC> 等待 调度器完全停止 方可开始 GC)
+	// 值为 1 时, 表示 暂停 系统监控任务 (只有 gc 时才会这么做)
+	sysmonwait uint32 	// 作为 系统检测任务被执行期间的停止计数和通知机制    (系统监控任务是一个 死循环, 只有垃圾回收时, 才会暂停)
+	sysmonnote note		// 用来 向执行系统 检测任务的程序 发送通知		(信号量, 用来阻塞自身 <阻塞系统监控> 等待 GC结束)
 
 	// safepointFn should be called on each P at the next GC
 	// safepoint if p.runSafePointFn is set.

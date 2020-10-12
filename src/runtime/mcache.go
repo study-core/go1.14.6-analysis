@@ -9,6 +9,14 @@ import (
 	"unsafe"
 )
 
+// todo span 的缓存结构定义
+//
+//	有了管理内存的基本单位span， 还要有个数据结构来管理span， 这个数据结构叫 `mcentral`， 各线程需要内存时从
+//	mcentral管理的span中申请内存， 为了避免多线程申请内存时不断的加锁， Golang为每个线程分配了span的缓
+//	存， 这个缓存即是cache
+//
+// todo cache作为线程的私有资源为单个线程服务
+//
 // Per-thread (in Go, per-P) cache for small objects.
 // No locking needed because it is per-thread (per-P).
 //
@@ -37,6 +45,9 @@ type mcache struct {
 
 	// The rest is not accessed on every malloc.
 
+	// todo 按class分组的mspan列表   （len == 134 ）
+	//
+	// alloc为mspan的指针数组， 数组大小为class总数的2倍   （我们一共有 67 类 class, 所以 67*2 == 134）
 	alloc [numSpanClasses]*mspan // spans to allocate from, indexed by spanClass
 
 	stackcache [_NumStackOrders]stackfreelist

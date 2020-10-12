@@ -15,6 +15,11 @@ import (
 //
 // gcSweepBuf is safe for concurrent push operations *or* concurrent
 // pop operations, but not both simultaneously.
+//
+// 一个 `gcSweepBuf` 是一组 `*mspans`
+//
+// `gcSweepBuf` 对并发 push 操作 或 并发 pop 操作  是安全的，但不能同时进行。
+//
 type gcSweepBuf struct {
 	// A gcSweepBuf is a two-level data structure consisting of a
 	// growable spine that points to fixed-sized blocks. The spine
@@ -31,6 +36,13 @@ type gcSweepBuf struct {
 	// this memory because there could be concurrent lock-free
 	// access and we're likely to reuse it anyway. (In principle,
 	// we could do this during STW.)
+	//
+	// `gcSweepBuf` 是两级数据结构，由指 向固定大小块的可增长脊椎组成。 可以不带锁地访问 脊椎，但是添加一个块或使其增长需要采取脊椎锁。
+	//
+	//  因为每个mspan至少覆盖 8K 堆，并且在 gcSweepBu f中占用最多8个byte，所以主干的增长非常有限。
+	//
+	//  将主干和所有块分配为堆外，这使得它可以在内存管理器中使用，并且避免了所有这些上的 写障碍 (write barriers)。
+	//  我们从不释放此内存，因为可能存在并发的无锁访问，并且我们很可能会重用它。 （原则上，我们可以在STW期间执行此操作。）
 
 	spineLock mutex
 	spine     unsafe.Pointer // *[N]*gcSweepBlock, accessed atomically

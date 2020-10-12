@@ -14,18 +14,38 @@ package runtime
 
 import "runtime/internal/atomic"
 
-// Central list of free objects of a given size.
+// todo 管理 span 的数据结构 (其 位于 spans 区？)
+//
+// todo central则是全局资源， 为多个线程服务
+//		当某个线程内存不足时会向central申请， 当某个线程释放内存时又会回收进central
+//
+// Central list of free objects of a given size.  给定大小的空闲对象的 集中列表
+//
+// 有了管理内存的基本单位span， 还要有个数据结构来管理span， 这个数据结构叫mcentral， 各线程需要内存时从  `mcentral` 管理的 `span` 中申请内存
+//
+// todo 每个mcentral对象只管理特定的class规格的span
+//		每种class都会对应一个 mcentral,这个mcentral的集合存放于mheap数据结构中
 //
 //go:notinheap
 type mcentral struct {
+
+	// 底层互斥锁
 	lock      mutex
+
+	// span class ID     (每个mcentral管理着一组有相同class的span列表)
 	spanclass spanClass
+
+	// non-empty 指还有空闲块 的span列表      (指还有内存可用的span列表)
 	nonempty  mSpanList // list of spans with a free object, ie a nonempty free list
+
+	// 指没有空闲块 的span列表		(指没有内存可用的span列表)
 	empty     mSpanList // list of spans with no free objects (or cached in an mcache)
 
 	// nmalloc is the cumulative count of objects allocated from
 	// this mcentral, assuming all spans in mcaches are
 	// fully-allocated. Written atomically, read under STW.
+	//
+	// 已累计分配的对象个数
 	nmalloc uint64
 }
 

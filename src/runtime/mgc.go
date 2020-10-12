@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+
+// todo GC 实现  GC 章节
 // Garbage collector (GC).
 //
 // The GC runs concurrently with mutator threads, is type accurate (aka precise), allows multiple
@@ -167,8 +169,11 @@ var heapminimum uint64 = defaultHeapMinimum
 const defaultHeapMinimum = 4 << 20
 
 // Initialized from $GOGC.  GOGC=off means no GC.
+//
+// todo 控制 内存增长率 的变量, 由 环境变量  GOGC 的值,  如果 GOGC=off 则, 永远不需要 GC
 var gcpercent int32
 
+// 初始化 gc 需要的 各个状态 和 变量值
 func gcinit() {
 	if unsafe.Sizeof(workbuf{}) != _WorkbufSize {
 		throw("size of Workbuf is suboptimal")
@@ -186,13 +191,16 @@ func gcinit() {
 	memstats.heap_marked = uint64(float64(heapminimum) / (1 + memstats.triggerRatio))
 
 	// Set gcpercent from the environment. This will also compute
-	// and set the GC trigger and goal.
+	// and set the GC trigger and goal.   从环境设置gcpercent. 这还将计算并设置GC触发和目标.
+	//
+	// 设置 是否需要 启动gc 的内存增长率 的变量值
 	_ = setGCPercent(readgogc())
 
 	work.startSema = 1
 	work.markDoneSema = 1
 }
 
+// todo 读取 环境变量  GOGC 的值
 func readgogc() int32 {
 	p := gogetenv("GOGC")
 	if p == "off" {
@@ -201,7 +209,7 @@ func readgogc() int32 {
 	if n, ok := atoi32(p); ok {
 		return n
 	}
-	return 100
+	return 100   // 默认给 100
 }
 
 // gcenable is called after the bulk of the runtime initialization,
@@ -218,6 +226,7 @@ func gcenable() {
 	memstats.enablegc = true // now that runtime is initialized, GC is okay
 }
 
+// 设置 是否需要 启动gc 的内存增长率 的变量值
 //go:linkname setGCPercent runtime/debug.setGCPercent
 func setGCPercent(in int32) (out int32) {
 	// Run on the system stack since we grab the heap lock.
@@ -485,6 +494,14 @@ func (c *gcControllerState) startCycle() {
 // It should only be called when gcBlackenEnabled != 0 (because this
 // is when assists are enabled and the necessary statistics are
 // available).
+//
+// todo 计算新的 辅助比率 用来算出 是否达到需要启动GC的内存分配量
+//
+//  `revise()` 在GC周期内更新辅助比率以说明改进的估算值. 应该在STW下或在更新memstats.heap_scan, memstats.heap_live 或 memstats.next_gc (保持mheap_.lock) 时调用它.
+//
+// 只有在 `gcBlackenEnabled != 0` 时才应调用它 (因为这是在启用辅助功能并且必要的统计信息可用时).
+//
+//
 func (c *gcControllerState) revise() {
 	gcpercent := gcpercent
 	if gcpercent < 0 {
@@ -507,7 +524,16 @@ func (c *gcControllerState) revise() {
 	//
 	// (This is a float calculation to avoid overflowing on
 	// 100*heap_scan.)
-	scanWorkExpected := int64(float64(memstats.heap_scan) * 100 / float64(100+gcpercent))
+	//
+	//
+	//  计算剩余的预期扫描工作。
+	//
+	//  这是根据预期的稳态可扫描堆估算的。 例如，在`GOGC = 100`的情况下，预期只有一半可扫描堆是活动的，因此这就是我们的目标。
+	//
+	// (这是一个浮点计算，以避免在100 * heap_scan上溢出 )
+	//
+	//
+	scanWorkExpected := int64(float64(memstats.heap_scan) * 100 / float64(100+gcpercent))   // todo 决定是否 启动 GC 的内存分配量 阈值??
 
 	if live > memstats.next_gc || c.scanWork > scanWorkExpected {
 		// We're past the soft goal, or we've already done more scan
@@ -551,6 +577,9 @@ func (c *gcControllerState) revise() {
 	// Compute the mutator assist ratio so by the time the mutator
 	// allocates the remaining heap bytes up to next_gc, it will
 	// have done (or stolen) the remaining amount of scan work.
+	//
+	//
+	// 计算增幅器辅助比率，以便当增幅器分配剩余堆字节直到 next_gc 时，它将完成（或失窃）了剩余的扫描工作量。
 	c.assistWorkPerByte = float64(scanWorkRemaining) / float64(heapRemaining)
 	c.assistBytesPerWork = float64(heapRemaining) / float64(scanWorkRemaining)
 }
@@ -1057,9 +1086,13 @@ var work struct {
 	heap0, heap1, heap2, heapGoal uint64
 }
 
+// todo 手动触发 GC 的函数
 // GC runs a garbage collection and blocks the caller until the
 // garbage collection is complete. It may also block the entire
 // program.
+//
+//
+// GC 运行垃圾回收 并 阻塞调用方，直到垃圾回收完成。 它还可能会阻塞整个程序。
 func GC() {
 	// We consider a cycle to be: sweep termination, mark, mark
 	// termination, and sweep. This function shouldn't return
@@ -1311,6 +1344,8 @@ func gcStart(trigger gcTrigger) {
 	if trace.enabled {
 		traceGCSTWStart(1)
 	}
+
+	//调用  stopTheWorld 的核心逻辑方法
 	systemstack(stopTheWorldWithSema)
 	// Finish sweep before we start concurrent scan.
 	systemstack(func() {

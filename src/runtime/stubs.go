@@ -15,6 +15,11 @@ func add(p unsafe.Pointer, x uintptr) unsafe.Pointer {
 // getg returns the pointer to the current g.
 // The compiler rewrites calls to this function into instructions
 // that fetch the g directly (from TLS or from the dedicated register).
+//
+// todo 获取当前G
+// getg() 返回指向当前g的指针
+// 编译器将此函数的调用 重写为直接获取g的指令（从TLS或专用寄存器）。
+//
 func getg() *g
 
 // mcall switches from the g to the g0 stack and invokes fn(g),
@@ -49,6 +54,23 @@ func mcall(fn func(*g))
 //		x = bigcall(y)
 //	})
 //	... use x ...
+//
+/**
+	todo `systemstack()`  在系统堆栈上运行fn
+
+			如果从每个OS线程（g0）堆栈中调用 systemstack，或者从信号处理（gsignal）堆栈中调用systemstack，则systemstack直接调用fn并返回
+
+			否则，将从普通goroutine的有限堆栈中调用systemstack。 在这种情况下，系统堆栈切换到每个OS线程堆栈，调用fn，然后切回。
+
+			通常使用func文字作为参数，以便与调用系统堆栈周围的代码共享输入和输出：
+
+			 ...设置y ...
+			 systemstack（func（）{
+			 x = bigcall（y）
+			}）
+			 ...使用x ...
+
+ */
 //
 //go:noescape
 func systemstack(fn func())

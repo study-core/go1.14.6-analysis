@@ -166,6 +166,7 @@ func blockAlignSummaryRange(level int, lo, hi int) (int, int) {
 	return int(alignDown(uintptr(lo), e)), int(alignUp(uintptr(hi), e))
 }
 
+// todo 内存页 的分配数据结构
 type pageAlloc struct {
 	// Radix tree of summaries.
 	//
