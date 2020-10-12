@@ -657,7 +657,10 @@ type p struct {
 	m           muintptr   // back-link to associated m (nil if idle)
 
 	// 分配内存时使用的本地分配器 todo (P 和 M 关联时, 会复制给 M, 查看 M 定义自明)
-	mcache      *mcache
+	//
+	// P 是一个虚拟的资源, 同一时间只能有一个线程访问同一个P, 所以P中的数据不需要锁.
+	//   为了分配对象时有更好的性能, 各个P中都有span的缓存(也叫mcache)
+	mcache      *mcache  // 各个P中按span类型的不同, 有67*2=134个span的缓存,
 	pcache      pageCache
 	raceprocctx uintptr
 

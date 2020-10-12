@@ -577,6 +577,8 @@ type mspan struct {
 	// undefined and should never be referenced.
 	//
 	// Object n starts at address n*elemsize + (start << pageShift).
+	//
+	// span中有一个freeindex标记下一次分配对象时应该开始搜索的地址, 分配后freeindex会增加, todo 在freeindex之前的元素都是已分配的, 在freeindex之后的元素有可能已分配, 也有可能未分配.
 	freeindex uintptr
 	// TODO: Look up nelems from sizeclass and remove this field if it
 	// helps performance.
@@ -590,6 +592,9 @@ type mspan struct {
 	// ctz (count trailing zero) to use it directly.
 	// allocCache may contain bits beyond s.nelems; the caller must ignore
 	// these.
+	//
+	// 使用 freeindex + allocBits 可以在分配时跳过已分配的元素, 把对象设置在未分配的元素中,
+	// 但因为每次都去访问 allocBits效率会比较慢, span中有一个整数型的 allocCache 用于缓存 freeindex 开始的bitmap, 缓存的bit值与原值相反.
 	allocCache uint64
 
 	// allocBits and gcmarkBits hold pointers to a span's mark and
@@ -614,7 +619,12 @@ type mspan struct {
 	// The sweep will free the old allocBits and set allocBits to the
 	// gcmarkBits. The gcmarkBits are replaced with a fresh zeroed
 	// out memory.
+	//
+	// span每次GC以后都可能会回收掉一些元素, allocBits用于标记哪些元素是已分配的, 哪些元素是未分配的.
+	//
 	allocBits  *gcBits		// todo 分配位图， 每一位代表一个块是否已分配      0: 未分配    1: 分配
+	// gcmarkBits 用于在gc时标记哪些对象存活, todo 每次gc以后 gcmarkBits 会变为 新的allocBits.  (一个巧妙地设计)
+	// 需要注意的是  span结构本身的内存  是从系统分配的, 上面提到的spans区域和bitmap区域都只是一个索引.
 	gcmarkBits *gcBits		// 用于标记内存块被引用情况				0： 未被引用    1: 被引用
 
 	// sweep generation:

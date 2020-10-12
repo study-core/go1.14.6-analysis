@@ -1259,6 +1259,12 @@ func (t gcTrigger) test() bool {
 //
 // This may return without performing this transition in some cases,
 // such as when called on a system stack or with locks held.
+//
+//
+// todo  `gcStart()` 启动GC
+// 			它从 _GCoff 转换为 _GCmark（如果 debug.gcstoptheworld == 0）或  执行所有GC（如果 debug.gcstoptheworld != 0）。
+//
+// 在某些情况下，例如 在系统堆栈上调用 或 持有锁时，可能不执行此转换就返回此值。
 func gcStart(trigger gcTrigger) {
 	// Since this is called from malloc and malloc is called in
 	// the guts of a number of libraries that might be holding
@@ -1345,7 +1351,7 @@ func gcStart(trigger gcTrigger) {
 		traceGCSTWStart(1)
 	}
 
-	//调用  stopTheWorld 的核心逻辑方法
+	// 调用  stopTheWorld 的核心逻辑方法
 	systemstack(stopTheWorldWithSema)
 	// Finish sweep before we start concurrent scan.
 	systemstack(func() {

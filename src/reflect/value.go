@@ -1962,6 +1962,7 @@ type stringHeader struct {
 	Len  int
 }
 
+// todo  反射包 中的 Slice 运行时 类型表示
 // SliceHeader is the runtime representation of a slice.
 // It cannot be used safely or portably and its representation may
 // change in a later release.

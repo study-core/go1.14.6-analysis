@@ -23,6 +23,13 @@ import (
 // mcaches are allocated from non-GC'd memory, so any heap pointers
 // must be specially handled.
 //
+// 	在分配对象 时将会从以下的位置获取适合的span用于分配:
+//
+//		(1)、首先从P的缓存(mcache)获取, 如果有缓存的span并且未满则使用, 这个步骤 不需要 锁
+//		(2)、然后从全局缓存(mcentral)获取, 如果获取成功则设置到P, 这个步骤 需要锁
+//		(3)、最后从mheap获取, 获取后设置到全局缓存, 这个步骤需要锁
+//
+//
 //go:notinheap
 type mcache struct {
 	// The following members are accessed on every malloc,

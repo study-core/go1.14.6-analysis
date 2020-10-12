@@ -939,10 +939,12 @@ func readvarint(p []byte) (read uint32, val uint32) {
 	return n, v
 }
 
+// todo  栈空间 结构定义  (函数的栈空间)
 type stackmap struct {
-	n        int32   // number of bitmaps
-	nbit     int32   // number of bits in each bitmap
-	bytedata [1]byte // bitmaps, each starting on a byte boundary
+	n        int32   // number of bitmaps  位图数量
+	nbit     int32   // number of bits in each bitmap  每个位图中的位数
+	// 函数信息: 涵盖了函数的栈空间, 使用 1 bit 表示一个指针大小的内存 (位于stackmap.bytedata)
+	bytedata [1]byte // bitmaps, each starting on a byte boundary   位图，每个位图从字节边界开始
 }
 
 //go:nowritebarrier

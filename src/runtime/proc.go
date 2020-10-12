@@ -4738,6 +4738,9 @@ func checkdead() {
 //
 var forcegcperiod int64 = 2 * 60 * 1e9     // todo 定时 gc 的间隔
 
+// todo 抢占函数  【超级重要】
+//
+// runtime.main会创建一个额外的M运行sysmon函数, 抢占就是在sysmon中实现的
 // Always runs without a P, so write barriers are not allowed.
 //
 //go:nowritebarrierrec
@@ -4750,6 +4753,8 @@ func sysmon() {
 	lasttrace := int64(0)
 	idle := 0 // how many cycles in succession we had not wokeup somebody
 	delay := uint32(0)
+
+	// sysmon 会进入一个无限循环, 第一轮回休眠20us, 之后每次休眠时间倍增, 最终每一轮都会休眠10ms.
 	for {
 		if idle == 0 { // start with 20us sleep...
 			delay = 20

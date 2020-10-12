@@ -283,7 +283,7 @@ func asmcgocall(fn, arg unsafe.Pointer) int32
 
 func morestack()
 func morestack_noctxt()
-func rt0_go()
+func rt0_go()  // todo 这个是 `go程序的入口点`
 
 // return0 is a stub used to return 0 from deferproc.
 // It is called at the very end of deferproc to signal

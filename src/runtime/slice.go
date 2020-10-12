@@ -10,6 +10,8 @@ import (
 	"unsafe"
 )
 
+
+// todo slice 结构的 底层实现
 type slice struct {
 	array unsafe.Pointer
 	len   int

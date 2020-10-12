@@ -9,6 +9,10 @@ import (
 	"unsafe"
 )
 
+
+// todo sync.map 的定义
+//
+//
 // Map is like a Go map[interface{}]interface{} but is safe for concurrent use
 // by multiple goroutines without additional locking or coordination.
 // Loads, stores, and deletes run in amortized constant time.
@@ -24,6 +28,21 @@ import (
 // contention compared to a Go map paired with a separate Mutex or RWMutex.
 //
 // The zero Map is empty and ready for use. A Map must not be copied after first use.
+//
+//
+// Map 类似于 `Go map[interface{}]interface{}`，但是可以安全地被多个goroutine并发使用，而无需额外的锁定或协调。
+//	加载，存储 和 删除 以固定的固定时间运行.
+//
+//  Map类型 是特殊的. 大多数代码应改用带有单独锁定或协调功能的普通Go map，以提高类型安全性，并使其更易于维护其他不变式以及map内容
+//
+// Map类型针 对两种常见用例进行了优化:
+// 			(1) 给定键的条目仅写入一次但读取多次, 例如在仅增长的高速缓存中
+// 			(2) 当多个goroutine读取, 写入时, 并覆盖不相交的键集的条目.
+// 			在这两种情况下,与单独的Mutex或RWMutex配对使用的Go map相比, 使用sync.Map可以显着减少锁争用
+//
+//	零位图为空，可以使用了。 首次使用后不得复制 sync.Map
+//
+//
 type Map struct {
 	mu Mutex
 
@@ -248,6 +267,9 @@ func (e *entry) tryLoadOrStore(i interface{}) (actual interface{}, loaded, ok bo
 	// Copy the interface after the first load to make this method more amenable
 	// to escape analysis: if we hit the "load" path or the entry is expunged, we
 	// shouldn't bother heap-allocating.
+	//
+	// 在第一次加载后复制接口，以使此方法更易于【逃避分析】：如果我们单击 "加载" 路径 或 删除了条目，则不必理会堆分配
+	//
 	ic := i
 	for {
 		if atomic.CompareAndSwapPointer(&e.p, nil, unsafe.Pointer(&ic)) {
@@ -293,6 +315,7 @@ func (e *entry) delete() (hadValue bool) {
 	}
 }
 
+//todo map 的 range 遍历
 // Range calls f sequentially for each key and value present in the map.
 // If f returns false, range stops the iteration.
 //

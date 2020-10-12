@@ -36,6 +36,9 @@ const maxOpenDefers = 8
 // ssaDumpInlined holds all inlined functions when ssaDump contains a function name.
 var ssaDumpInlined []*Node
 
+
+// todo 初始化 ssa 配置
+//		SSA 代表 `static single-assignment`  (静态单分配)，是一种IR(中间表示代码)，要保证每个变量只被赋值一次。这个能帮助简化编译器的优化算法。
 func initssaconfig() {
 	types_ := ssa.NewTypes()
 

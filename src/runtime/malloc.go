@@ -885,9 +885,15 @@ func (c *mcache) nextFree(spc spanClass) (v gclinkptr, s *mspan, shouldhelpgc bo
 	return
 }
 
+// todo 内存分配 函数 (入口)
+//
 // Allocate an object of size bytes.
 // Small objects are allocated from the per-P cache's free lists.
 // Large objects (> 32 kB) are allocated straight from the heap.
+//
+//	分配一个 size byte 的对象。
+//	从 per-P 缓存的空闲列表中分配小对象。
+//	从 堆直接分配大对象（> 32 kB）。
 func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	if gcphase == _GCmarktermination {
 		throw("mallocgc called with gcphase == _GCmarktermination")
@@ -922,7 +928,10 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
 	// assistG is the G to charge for this allocation, or nil if
 	// GC is not currently active.
+	//
+	//`assistG` 是要为此分配收取费用的G，如果GC当前未激活，则为nil。
 	var assistG *g
+
 	if gcBlackenEnabled != 0 {
 		// Charge the current user G for this allocation.
 		assistG = getg()
@@ -936,7 +945,9 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		if assistG.gcAssistBytes < 0 {
 			// This G is in debt. Assist the GC to correct
 			// this before allocating. This must happen
-			// before disabling preemption.
+			// before disabling preemption.    这个 G 负债累累。 协助 GC进行更正，然后再分配。 这必须在禁用抢占之前发生。
+			//
+			// 当正在 GC 时, 当前 G 继续运行, 不过需要当前 G 辅助 gc 做一些 工作
 			gcAssistAlloc(assistG)
 		}
 	}
@@ -953,9 +964,11 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
 	shouldhelpgc := false
 	dataSize := size
-	c := gomcache()
+	c := gomcache()  // 获取 运行当前 G 的 M 上的 P 的 mcache (用来先从上面 申请 内存 span)
 	var x unsafe.Pointer
 	noscan := typ == nil || typ.ptrdata == 0
+
+	// todo 对于 小于 32 kb 的对象 分配策略
 	if size <= maxSmallSize {
 		if noscan && size < maxTinySize {
 			// Tiny allocator.
@@ -1040,10 +1053,12 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				memclrNoHeapPointers(unsafe.Pointer(v), size)
 			}
 		}
-	} else {
+	} else {  // todo 对于 x >= 32 kb 的对象分配策略
 		var s *mspan
 		shouldhelpgc = true
 		systemstack(func() {
+
+			// 分配大对象 内存
 			s = largeAlloc(size, needzero, noscan)
 		})
 		s.freeindex = 1
@@ -1126,13 +1141,15 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
 	if shouldhelpgc {
 		if t := (gcTrigger{kind: gcTriggerHeap}); t.test() {
-			gcStart(t)
+			gcStart(t)  // 启动 gc
 		}
 	}
 
 	return x
 }
 
+
+// todo 分配大对象内存 函数
 func largeAlloc(size uintptr, needzero bool, noscan bool) *mspan {
 	// print("largeAlloc size=", size, "\n")
 
@@ -1149,6 +1166,7 @@ func largeAlloc(size uintptr, needzero bool, noscan bool) *mspan {
 	// pays the debt down to npage pages.
 	deductSweepCredit(npages*_PageSize, npages)
 
+	// 从 heap 上分配 内存
 	s := mheap_.alloc(npages, makeSpanClass(0, noscan), needzero)
 	if s == nil {
 		throw("out of memory")
@@ -1161,6 +1179,10 @@ func largeAlloc(size uintptr, needzero bool, noscan bool) *mspan {
 // implementation of new builtin
 // compiler (both frontend and SSA backend) knows the signature
 // of this function
+//
+//
+// todo 实现 nwe 关键字 的内置函数
+// 编译器（前端和SSA后端）都知道此函数的签名
 func newobject(typ *_type) unsafe.Pointer {
 	return mallocgc(typ.size, typ, true)
 }

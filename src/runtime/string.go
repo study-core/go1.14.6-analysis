@@ -15,7 +15,7 @@ const tmpStringBufSize = 32
 
 type tmpBuf [tmpStringBufSize]byte
 
-// 这是 string  拼接的 函数
+// todo strin拼接函数
 //
 // concatstrings implements a Go string concatenation x+y+z+...
 // The operands are passed in the slice a.
@@ -50,7 +50,7 @@ func concatstrings(buf *tmpBuf, a []string) string {
 	}
 	s, b := rawstringtmp(buf, l)  	// 生成指定大小的字符串，返回一个string和切片，二者共享内存空间
 	for _, x := range a {
-		copy(b, x)					// string 无法修改，只能通过切片修改
+		copy(b, x)					// string 无法修改，但是能通过切片修改  (底层数组的内容肯定是可以改的, 只是 string 这个类型编译器不给修改里面的内容而已)
 		b = b[len(x):]
 	}
 	return s
@@ -117,6 +117,8 @@ func stringDataOnStack(s string) bool {
 	return stk.lo <= ptr && ptr < stk.hi
 }
 
+
+// 生成一个新的string， 返回的string和切片共享相同的空间
 func rawstringtmp(buf *tmpBuf, l int) (s string, b []byte) {
 	if buf != nil && l <= len(buf) {
 		b = buf[:l]

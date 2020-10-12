@@ -3,6 +3,8 @@
 
 package runtime
 
+// todo span 的 class 表 共 下面列出的66 种小的 + 1种 特殊的  == 67 种  class 的 span
+//
 // class  bytes/obj  bytes/span  objects  tail waste  max waste
 //     1          8        8192     1024           0     87.50%
 //     2         16        8192      512           0     43.75%

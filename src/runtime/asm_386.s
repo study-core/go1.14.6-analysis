@@ -88,7 +88,7 @@ DATA _rt0_386_lib_argc<>(SB)/4, $0
 GLOBL _rt0_386_lib_argc<>(SB),NOPTR, $4
 DATA _rt0_386_lib_argv<>(SB)/4, $0
 GLOBL _rt0_386_lib_argv<>(SB),NOPTR, $4
-
+// 程序的主入口, `runtime.rt0_go()` 函数的汇编实现
 TEXT runtime·rt0_go(SB),NOSPLIT|NOFRAME,$0
 	// Copy arguments forward on an even stack.
 	// Users of this function jump to it, they don't call it.

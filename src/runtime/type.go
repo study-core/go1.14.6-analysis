@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Runtime type representation.
+// Runtime type representation.  todo  运行时类型表示    (这里有很多种类型的 表示方式,  map  slice array chan 等等)
 
 package runtime
 
@@ -49,6 +49,13 @@ type _type struct {
 	// gcdata stores the GC type data for the garbage collector.
 	// If the KindGCProg bit is set in kind, gcdata is a GC program.
 	// Otherwise it is a ptrmask bitmap. See mbitmap.go for details.
+	//
+	// gcdata 存储 垃圾回收器 的GC类型数据。
+	// 如果 KindGCProg位 设置为实物，则gcdata是GC程序。
+	// 否则为 ptrmask位图。 有关详细信息，请参见 mbitmap.go
+	//
+	// 类型信息: 在分配对象时会复制到bitmap区域, 使用1 bit表示一个指针大小的内存 (位于_type.gcdata)
+	//
 	gcdata    *byte
 	str       nameOff
 	ptrToThis typeOff
@@ -369,7 +376,7 @@ type interfacetype struct {
 	mhdr    []imethod
 }
 
-// 定义 map 的类型
+// 供 runtime 使用的  运行时 map 的类型
 type maptype struct {
 
 	// 整个 map 的类型

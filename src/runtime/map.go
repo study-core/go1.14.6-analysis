@@ -113,7 +113,8 @@ func isEmpty(x uint8) bool {
 
 // A header for a Go map.
 //
-// 这个是 map 的定义
+// todo  map 的底层定义
+//
 type hmap struct {
 	// Note: the format of the hmap is also encoded in cmd/compile/internal/gc/reflect.go.
 	// Make sure this stays in sync with the compiler's definition.
