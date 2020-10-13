@@ -82,22 +82,34 @@ func finishsweep_m() {
 	nextMarkBitArenaEpoch()
 }
 
+
+// todo 后台清扫任务
 func bgsweep(c chan int) {
 	sweep.g = getg()
 
+	// 等待唤醒
 	lock(&sweep.lock)
 	sweep.parked = true
 	c <- 1
 	goparkunlock(&sweep.lock, waitReasonGCSweepWait, traceEvGoBlock, 1)
 
+
+	// 循环清扫
 	for {
+
+
+		// 清扫一个span, 然后进入调度(一次只做少量工作)
 		for sweepone() != ^uintptr(0) {
 			sweep.nbgsweep++
 			Gosched()
 		}
+
+		// 释放一些未使用的标记队列缓冲区到heap
 		for freeSomeWbufs(true) {
 			Gosched()
 		}
+
+		// 如果清扫未完成则继续循环
 		lock(&sweep.lock)
 		if !isSweepDone() {
 			// This can happen if a GC runs between
@@ -106,35 +118,52 @@ func bgsweep(c chan int) {
 			unlock(&sweep.lock)
 			continue
 		}
+
+		// 否则让后台清扫任务进入休眠, 当前M继续调度
 		sweep.parked = true
 		goparkunlock(&sweep.lock, waitReasonGCSweepWait, traceEvGoBlock, 1)
 	}
 }
 
+// 从sweepSpans中取出单个span清扫
+//
 // sweepone sweeps some unswept heap span and returns the number of pages returned
 // to the heap, or ^uintptr(0) if there was nothing to sweep.
 func sweepone() uintptr {
 	_g_ := getg()
 	sweepRatio := mheap_.sweepPagesPerByte // For debugging
 
+	// 禁止G被抢占
+	//
+	//
 	// increment locks to ensure that the goroutine is not preempted
 	// in the middle of sweep thus leaving the span in an inconsistent state for next GC
 	_g_.m.locks++
+
+	// 检查是否已完成清扫
 	if atomic.Load(&mheap_.sweepdone) != 0 {
 		_g_.m.locks--
 		return ^uintptr(0)
 	}
+
+	// 更新同时执行sweep的任务数量
 	atomic.Xadd(&mheap_.sweepers, +1)
 
 	// Find a span to sweep.
 	var s *mspan
 	sg := mheap_.sweepgen
 	for {
+
+		// 从sweepSpans中取出一个span
 		s = mheap_.sweepSpans[1-sg/2%2].pop()
+
+		// 全部清扫完毕时跳出循环
 		if s == nil {
 			atomic.Store(&mheap_.sweepdone, 1)
 			break
 		}
+
+		// 其他M已经在清扫这个span时跳过
 		if state := s.state.get(); state != mSpanInUse {
 			// This can happen if direct sweeping already
 			// swept this span, but in that case the sweep
@@ -145,6 +174,8 @@ func sweepone() uintptr {
 			}
 			continue
 		}
+
+		// 原子增加span的sweepgen, 失败表示其他M已经开始清扫这个span, 跳过
 		if s.sweepgen == sg-2 && atomic.Cas(&s.sweepgen, sg-2, sg-1) {
 			break
 		}
@@ -153,6 +184,8 @@ func sweepone() uintptr {
 	// Sweep the span we found.
 	npages := ^uintptr(0)
 	if s != nil {
+
+		// 清扫这个span
 		npages = s.npages
 		if s.sweep(false) {
 			// Whole span was freed. Count it toward the
@@ -167,6 +200,8 @@ func sweepone() uintptr {
 		}
 	}
 
+	// 更新同时执行sweep的任务数量
+	//
 	// Decrement the number of active sweepers and if this is the
 	// last one print trace information.
 	if atomic.Xadd(&mheap_.sweepers, -1) == 0 && atomic.Load(&mheap_.sweepdone) != 0 {
@@ -174,7 +209,11 @@ func sweepone() uintptr {
 			print("pacer: sweep done at heap size ", memstats.heap_live>>20, "MB; allocated ", (memstats.heap_live-mheap_.sweepHeapLiveBasis)>>20, "MB during sweep; swept ", mheap_.pagesSwept, " pages at ", sweepRatio, " pages/byte\n")
 		}
 	}
+
+	// 允许G被抢占
 	_g_.m.locks--
+
+	// 返回清扫的页数
 	return npages
 }
 
@@ -219,6 +258,8 @@ func (s *mspan) ensureSwept() {
 	}
 }
 
+// todo 用于清扫单个span  (gc 相关)
+//
 // Sweep frees or collects finalizers for blocks not marked in the mark phase.
 // It clears the mark bits in preparation for the next GC round.
 // Returns true if the span was returned to heap.
@@ -241,6 +282,7 @@ func (s *mspan) sweep(preserve bool) bool {
 		traceGCSweepSpan(s.npages * _PageSize)
 	}
 
+	// 统计已清理的页数
 	atomic.Xadd64(&mheap_.pagesSwept, int64(s.npages))
 
 	spc := s.spanclass
@@ -258,6 +300,9 @@ func (s *mspan) sweep(preserve bool) bool {
 	// since the last GC.
 	// This situation is analogous to being on a freelist.
 
+
+	// 判断在special中的析构器, 如果对应的对象已经不再存活则标记对象存活防止回收, 然后把析构器移到运行队列
+	//
 	// Unlink & free special records for any objects we're about to free.
 	// Two complications here:
 	// 1. An object can have both finalizer and profile special records.
@@ -311,6 +356,7 @@ func (s *mspan) sweep(preserve bool) bool {
 		}
 	}
 
+	// 除错用
 	if debug.allocfreetrace != 0 || debug.clobberfree != 0 || raceenabled || msanenabled {
 		// Find all newly freed objects. This doesn't have to
 		// efficient; allocfreetrace has massive overhead.
@@ -337,9 +383,12 @@ func (s *mspan) sweep(preserve bool) bool {
 		}
 	}
 
+	// 计算释放的对象数量
+	//
 	// Count the number of free objects in this span.
 	nalloc := uint16(s.countAlloc())
 	if spc.sizeclass() == 0 && nalloc == 0 {
+		// 如果span的类型是0(大对象)并且其中的对象已经不存活则释放到heap
 		s.needzero = 1
 		freeToHeap = true
 	}
@@ -349,21 +398,39 @@ func (s *mspan) sweep(preserve bool) bool {
 		throw("sweep increased allocation count")
 	}
 
+	// 设置新的allocCount
 	s.allocCount = nalloc
+
+	// 判断span是否无未分配的对象
 	wasempty := s.nextFreeIndex() == s.nelems
+
+	// 重置freeindex, 下次分配从0开始搜索
 	s.freeindex = 0 // reset allocation index to start of span.
 	if trace.enabled {
 		getg().m.p.ptr().traceReclaimed += uintptr(nfreed) * s.elemsize
 	}
 
+	// gcmarkBits变为新的allocBits
+	// 然后重新分配一块全部为0的gcmarkBits
+	// 下次分配对象时可以根据allocBits得知哪些元素是未分配的
+	//
+	//
 	// gcmarkBits becomes the allocBits.
 	// get a fresh cleared gcmarkBits in preparation for next GC
 	s.allocBits = s.gcmarkBits
 	s.gcmarkBits = newMarkBits(s.nelems)
 
+
+	// 更新freeindex开始的allocCache
+	//
 	// Initialize alloc bits cache.
 	s.refillAllocCache(0)
 
+
+	// 如果span中已经无存活的对象则更新sweepgen到最新
+	// 下面会把span加到mcentral或者mheap
+	//
+	//
 	// We need to set s.sweepgen = h.sweepgen only when all blocks are swept,
 	// because of the potential for a concurrent free/SetFinalizer.
 	// But we need to set it before we make the span available for allocation
@@ -383,10 +450,17 @@ func (s *mspan) sweep(preserve bool) bool {
 	}
 
 	if nfreed > 0 && spc.sizeclass() != 0 {
+
+		// 把span加到mcentral, res等于是否添加成功
 		c.local_nsmallfree[spc.sizeclass()] += uintptr(nfreed)
 		res = mheap_.central[spc].mcentral.freeSpan(s, preserve, wasempty)
+
+		// freeSpan会更新sweepgen
 		// mcentral.freeSpan updates sweepgen
 	} else if freeToHeap {
+
+		// 把span释放到mheap
+		//
 		// Free large span to heap
 
 		// NOTE(rsc,dvyukov): The original implementation of efence
@@ -413,7 +487,12 @@ func (s *mspan) sweep(preserve bool) bool {
 		c.local_largefree += size
 		res = true
 	}
+
+	// 如果span未加到mcentral或者未释放到mheap, 则表示span仍在使用
 	if !res {
+
+		// 把仍在使用的span加到sweepSpans的"已清扫"队列中
+		//
 		// The span has been swept and is still in-use, so put
 		// it on the swept in-use list.
 		mheap_.sweepSpans[sweepgen/2%2].push(s)

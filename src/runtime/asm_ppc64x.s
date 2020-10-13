@@ -218,6 +218,8 @@ TEXT runtime·systemstack_switch(SB), NOSPLIT, $0-0
 	BL	(LR)	// make sure this function is not leaf
 	RET
 
+
+// stubs.go 的 runtime.systemstack(fn func()) 的汇编实现
 // func systemstack(fn func())
 TEXT runtime·systemstack(SB), NOSPLIT, $0-8
 	MOVD	fn+0(FP), R3	// R3 = fn

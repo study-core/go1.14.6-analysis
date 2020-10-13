@@ -167,7 +167,7 @@ fail:
 // ptrmask for an allocation containing a single pointer.
 var oneptrmask = [...]uint8{1}
 
-// 执行根对象扫描工作
+// todo 执行 root 对象扫描工作  (gc 相关)
 //
 // markroot scans the i'th root.
 //
@@ -177,6 +177,10 @@ var oneptrmask = [...]uint8{1}
 //
 //go:nowritebarrier
 func markroot(gcw *gcWork, i uint32) {
+
+	// 判断取出的数值对应哪种任务
+	// (google的工程师觉得这种办法可笑)
+	//
 	// TODO(austin): This is a bit ridiculous. Compute and store
 	// the bases in gcMarkRootPrepare instead of the counts.
 	baseFlushCache := uint32(fixedRootCount)
@@ -188,35 +192,52 @@ func markroot(gcw *gcWork, i uint32) {
 
 	// Note: if you add a case here, please also update heapdump.go:dumproots.
 	switch {
+
+	// 释放mcache中的所有span, 要求STW
 	case baseFlushCache <= i && i < baseData:
 		flushmcache(int(i - baseFlushCache))
 
+
+	// 扫描可读写的全局变量
+	// 这里只会扫描i对应的block, 扫描时传入包含哪里有指针的bitmap数据
 	case baseData <= i && i < baseBSS:
 		for _, datap := range activeModules() {
 			markrootBlock(datap.data, datap.edata-datap.data, datap.gcdatamask.bytedata, gcw, int(i-baseData))
 		}
 
+
+	// 扫描只读的全局变量
+	// 这里只会扫描i对应的block, 扫描时传入包含哪里有指针的bitmap数据
 	case baseBSS <= i && i < baseSpans:
 		for _, datap := range activeModules() {
 			markrootBlock(datap.bss, datap.ebss-datap.bss, datap.gcbssmask.bytedata, gcw, int(i-baseBSS))
 		}
 
+
+	// 扫描析构器队列
 	case i == fixedRootFinalizers:
 		for fb := allfin; fb != nil; fb = fb.alllink {
 			cnt := uintptr(atomic.Load(&fb.cnt))
 			scanblock(uintptr(unsafe.Pointer(&fb.fin[0])), cnt*unsafe.Sizeof(fb.fin[0]), &finptrmask[0], gcw, nil)
 		}
 
+	// 释放已中止的G的栈
 	case i == fixedRootFreeGStacks:
 		// Switch to the system stack so we can call
 		// stackfree.
 		systemstack(markrootFreeGStacks)
 
+
+	// 扫描各个span中特殊对象(析构器列表)
 	case baseSpans <= i && i < baseStacks:
 		// mark mspan.specials
 		markrootSpans(gcw, int(i-baseSpans))
 
+
+	// 扫描各个G的栈
 	default:
+
+		// 获取需要扫描的G
 		// the rest is scanning goroutine stacks
 		var gp *g
 		if baseStacks <= i && i < end {
@@ -225,6 +246,8 @@ func markroot(gcw *gcWork, i uint32) {
 			throw("markroot: bad index")
 		}
 
+
+		// 记录等待开始的时间
 		// remember when we've first observed the G blocked
 		// needed only to output in traceback
 		status := readgstatus(gp) // We are not in a scan state
@@ -232,20 +255,33 @@ func markroot(gcw *gcWork, i uint32) {
 			gp.waitsince = work.tstart
 		}
 
+
+		// 切换到g0运行(有可能会扫到自己的栈)
 		// scanstack must be done on the system stack in case
 		// we're trying to scan our own stack.
 		systemstack(func() {
+
+
+			// 判断扫描的栈是否自己的
+			//
+			//
 			// If this is a self-scan, put the user G in
 			// _Gwaiting to prevent self-deadlock. It may
 			// already be in _Gwaiting if this is a mark
 			// worker or we're in mark termination.
 			userG := getg().m.curg
 			selfScan := gp == userG && readgstatus(userG) == _Grunning
+
+			// 如果正在扫描自己的栈则切换状态到等待中防止死锁
 			if selfScan {
 				casgstatus(userG, _Grunning, _Gwaiting)
 				userG.waitreason = waitReasonGarbageCollectionScan
 			}
 
+
+			// 扫描G的栈
+			//
+			//
 			// TODO: suspendG blocks (and spins) until gp
 			// stops, which may take a while for
 			// running goroutines. Consider doing this in
@@ -265,6 +301,8 @@ func markroot(gcw *gcWork, i uint32) {
 			gp.gcscandone = true
 			resumeG(stopped)
 
+
+			// 如果正在扫描自己的栈则把状态切换回运行中
 			if selfScan {
 				casgstatus(userG, _Gwaiting, _Grunning)
 			}
@@ -716,6 +754,10 @@ func gcFlushBgCredit(scanWork int64) {
 	unlock(&work.assistQueue.lock)
 }
 
+// todo 扫描栈
+//
+// 在抢占G成功时会调用scanstack扫描它自己的栈, 扫描栈用的函数是scanstack:
+//
 // scanstack scans gp's stack, greying all pointers found on the stack.
 //
 // scanstack will also shrink the stack if it is safe to do so. If it
@@ -778,14 +820,22 @@ func scanstack(gp *g, gcw *gcWork) {
 
 	// Scan the stack. Accumulate a list of stack objects.
 	scanframe := func(frame *stkframe, unused unsafe.Pointer) bool {
+
+		// scanframeworker会根据代码地址(pc)获取函数信息
+		// 然后找到函数信息中的stackmap.bytedata, 它保存了函数的栈上哪些地方有指针
+		// 再调用scanblock来扫描函数的栈空间, 同时函数的参数也会这样扫描
 		scanframeworker(frame, &state, gcw)
 		return true
 	}
+
+	// 枚举所有调用帧, 分别调用scanframe函数
 	gentraceback(^uintptr(0), ^uintptr(0), 0, gp, 0, nil, 0x7fffffff, scanframe, nil, 0)
 
 	// Find additional pointers that point into the stack from the heap.
 	// Currently this includes defers and panics. See also function copystack.
 
+	// 枚举所有defer的调用帧, 分别调用scanframe函数
+	//
 	// Find and trace all defer arguments.
 	tracebackdefers(gp, scanframe, nil)
 
@@ -1232,6 +1282,8 @@ func gcDrainN(gcw *gcWork, scanWork int64) int64 {
 	return workFlushed + gcw.scanWork
 }
 
+// 通用的扫描函数, 扫描全局变量和栈空间都会用它, 和scanobject不同的是bitmap需要手动传入
+//
 // scanblock scans b as scanobject would, but using an explicit
 // pointer bitmap instead of the heap bitmap.
 //
@@ -1247,35 +1299,55 @@ func scanblock(b0, n0 uintptr, ptrmask *uint8, gcw *gcWork, stk *stackScanState)
 	b := b0
 	n := n0
 
+
+	// 枚举扫描的地址
 	for i := uintptr(0); i < n; {
+
+		// 找到bitmap中对应的byte
 		// Find bits for the next word.
 		bits := uint32(*addb(ptrmask, i/(sys.PtrSize*8)))
 		if bits == 0 {
 			i += sys.PtrSize * 8
 			continue
 		}
+
+		// 枚举byte
 		for j := 0; j < 8 && i < n; j++ {
+
+			// 如果该地址包含指针
 			if bits&1 != 0 {
+
+				// todo 标记在该地址的对象存活, 并把它加到标记队列(该对象变为灰色)
 				// Same work as in scanobject; see comments there.
 				p := *(*uintptr)(unsafe.Pointer(b + i))
 				if p != 0 {
+					// 找到该对象对应的span和bitmap
 					if obj, span, objIndex := findObject(p, b, i); obj != 0 {
+
+						// 标记一个对象存活, 并把它加到标记队列(该对象变为灰色)
 						greyobject(obj, b, i, span, gcw, objIndex)
 					} else if stk != nil && p >= stk.stack.lo && p < stk.stack.hi {
 						stk.putPtr(p, false)
 					}
 				}
 			}
-			bits >>= 1
+			bits >>= 1      // todo 处理下一个指针下一个bit
 			i += sys.PtrSize
 		}
 	}
 }
 
+
 // scanobject scans the object starting at b, adding pointers to gcw.
 // b must point to the beginning of a heap object or an oblet.
 // scanobject consults the GC bitmap for the pointer mask and the
 // spans for the size of the object.
+//
+//
+//  `scanobject()` 从b开始扫描对象，并向gcw添加指针。
+//  `b`必须指向堆对象或对象的开头。
+//  scanobject向GC位图查询指针掩码，向`spans'查询对象的大小。
+//
 //
 //go:nowritebarrier
 func scanobject(b uintptr, gcw *gcWork) {
@@ -1284,13 +1356,22 @@ func scanobject(b uintptr, gcw *gcWork) {
 	// b is either the beginning of an object, in which case this
 	// is the size of the object to scan, or it points to an
 	// oblet, in which case we compute the size to scan below.
+	//
+	// 获取对象对应的bitma
 	hbits := heapBitsForAddr(b)
+
+	// 获取对象所在的span
 	s := spanOfUnchecked(b)
+
+	// 获取对象的大小
 	n := s.elemsize
 	if n == 0 {
 		throw("scanobject n == 0")
 	}
 
+
+	// 对象大小过大时(maxObletBytes是128KB)需要分割扫描
+	// 每次最多只扫描128KB
 	if n > maxObletBytes {
 		// Large object. Break into oblets for better
 		// parallelism and lower latency.
@@ -1327,8 +1408,11 @@ func scanobject(b uintptr, gcw *gcWork) {
 		}
 	}
 
+	// 扫描对象中的指针
 	var i uintptr
 	for i = 0; i < n; i += sys.PtrSize {
+
+		// 获取对应的bit
 		// Find bits for this word.
 		if i != 0 {
 			// Avoid needless hbits.next() on last iteration.
@@ -1336,6 +1420,9 @@ func scanobject(b uintptr, gcw *gcWork) {
 		}
 		// Load bits once. See CL 22712 and issue 16973 for discussion.
 		bits := hbits.bits()
+
+		// 检查scan bit判断是否继续扫描, 注意第二个scan bit是checkmark
+		//
 		// During checkmarking, 1-word objects store the checkmark
 		// in the type bit for the one word. The only one-word objects
 		// are pointers, or else they'd be merged with other non-pointer
@@ -1343,14 +1430,21 @@ func scanobject(b uintptr, gcw *gcWork) {
 		if i != 1*sys.PtrSize && bits&bitScan == 0 {
 			break // no more pointers in this object
 		}
+
+		// 检查pointer bit, 不是指针则继续
 		if bits&bitPointer == 0 {
 			continue // not a pointer
 		}
 
+		// 取出指针的值
+		//
 		// Work here is duplicated in scanblock and above.
 		// If you make changes here, make changes there too.
 		obj := *(*uintptr)(unsafe.Pointer(b + i))
 
+		// 如果指针在arena区域中, 则调用greyobject标记对象并把对象放到标记队列中
+		//
+		//
 		// At this point we have extracted the next potential pointer.
 		// Quickly filter out nil and pointers back to the current object.
 		if obj != 0 && obj-b >= n {
@@ -1368,6 +1462,8 @@ func scanobject(b uintptr, gcw *gcWork) {
 			}
 		}
 	}
+
+	// 统计扫描过的大小和对象数量
 	gcw.bytesMarked += uint64(n)
 	gcw.scanWork += int64(i)
 }
@@ -1474,10 +1570,15 @@ func scanConservative(b, n uintptr, ptrmask *uint8, gcw *gcWork, state *stackSca
 func shade(b uintptr) {
 	if obj, span, objIndex := findObject(b, 0, 0); obj != 0 {
 		gcw := &getg().m.p.ptr().gcw
+
+		// 标记一个对象存活, 并把它加到标记队列(该对象变为灰色)
 		greyobject(obj, 0, 0, span, gcw, objIndex)
 	}
 }
 
+// todo 用于标记一个对象存活, 并把它加到标记队列(该对象变为灰色)
+//
+//
 // obj is the start of an object with mark mbits.
 // If it isn't already marked, mark it and enqueue into gcw.
 // base and off are for debugging only and could be removed.
@@ -1493,6 +1594,8 @@ func greyobject(obj, base, off uintptr, span *mspan, gcw *gcWork, objIndex uintp
 	mbits := span.markBitsForIndex(objIndex)
 
 	if useCheckmark {
+
+		// checkmark 是用于检查是否所有可到达的对象都被正确标记的机制, 仅除错使用
 		if !mbits.isMarked() {
 			printlock()
 			print("runtime:greyobject: checkmarks finds unexpected unmarked object obj=", hex(obj), "\n")
@@ -1524,11 +1627,12 @@ func greyobject(obj, base, off uintptr, span *mspan, gcw *gcWork, objIndex uintp
 			throw("marking free object")
 		}
 
+		// 如果对象所在的span中的gcmarkBits对应的bit已经设置为1则可以跳过处理
 		// If marked we have nothing to do.
 		if mbits.isMarked() {
 			return
 		}
-		mbits.setMarked()
+		mbits.setMarked()  // 设置对象所在的span中的gcmarkBits对应的bit为1
 
 		// Mark span.
 		arena, pageIdx, pageMask := pageIndexOf(span.base())
@@ -1536,6 +1640,7 @@ func greyobject(obj, base, off uintptr, span *mspan, gcw *gcWork, objIndex uintp
 			atomic.Or8(&arena.pageMarks[pageIdx], pageMask)
 		}
 
+		// 如果确定对象不包含指针(所在span的类型是noscan), 则不需要把对象放入标记队列
 		// If this is a noscan object, fast-track it to black
 		// instead of greying it.
 		if span.spanclass.noscan() {
@@ -1544,6 +1649,9 @@ func greyobject(obj, base, off uintptr, span *mspan, gcw *gcWork, objIndex uintp
 		}
 	}
 
+
+	// todo 把对象放入标记队列
+	// 先放入本地标记队列, 失败时把本地标记队列中的部分工作转移到全局标记队列, 再放入本地标记队列
 	// Queue the obj for scanning. The PREFETCH(obj) logic has been removed but
 	// seems like a nice optimization that can be added back in.
 	// There needs to be time between the PREFETCH and the use.

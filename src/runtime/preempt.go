@@ -73,6 +73,9 @@ type suspendGState struct {
 	stopped bool
 }
 
+// todo 扫描 G 的栈
+//
+//
 // suspendG suspends goroutine gp at a safe-point and returns the
 // state of the suspended goroutine. The caller gets read access to
 // the goroutine until it calls resumeG.

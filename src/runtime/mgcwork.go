@@ -392,7 +392,7 @@ type workbufhdr struct {
 type workbuf struct {
 	workbufhdr
 	// account for the above fields
-	obj [(_WorkbufSize - unsafe.Sizeof(workbufhdr{})) / sys.PtrSize]uintptr
+	obj [(_WorkbufSize - unsafe.Sizeof(workbufhdr{})) / sys.PtrSize]uintptr   // todo 老是说的 GC 时 的三色标志队列, 其实就是这个了
 }
 
 // workbuf factory routines. These funcs are used to manage the

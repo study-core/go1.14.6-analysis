@@ -109,6 +109,10 @@ var runtimeInitTime int64
 // Value to use for signal mask for newly created M's.
 var initSigmask sigset
 
+
+// TODO main 函数的主入口
+//
+//
 // The main goroutine.
 func main() {
 	g := getg()
@@ -163,7 +167,7 @@ func main() {
 	// Record when the world started.
 	runtimeInitTime = nanotime()
 
-	gcenable()
+	gcenable()  // 启动 后台 GC 清扫工作 (守护进程)
 
 	main_init_done = make(chan bool)
 	if iscgo {
