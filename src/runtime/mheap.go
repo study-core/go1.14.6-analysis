@@ -151,9 +151,9 @@ type mheap struct {
 	//
 	//
 
-	// 统计信息中的 spans page 的 mSpanInUse; 原子更新
+	// 统计信息中的 spans page 的 mSpanInUse; 原子更新   todo 总共被使用的 page数
 	pagesInUse         uint64  // pages of spans in stats mSpanInUse; updated atomically
-	// 这个周期 中被扫描的 page 数;  原子更新
+	// 这个周期 中被扫描的 page 数;  原子更新   todo 已经被 清扫的 page数
 	pagesSwept         uint64  // pages swept this cycle; updated atomically
 	// pagesSweep 用作扫描率的来源; 原子更新
 	pagesSweptBasis    uint64  // pagesSwept to use as the origin of the sweep ratio; updated atomically

@@ -990,12 +990,25 @@ func stopTheWorldWithSema() {
 	}
 
 	lock(&sched.lock)
+
+	// 需要停止的P数量
 	sched.stopwait = gomaxprocs   // 直接将 最大 P 总数 记录起来
+
+	// 设置gc等待标记, 调度时看见此标记会进入等待
 	atomic.Store(&sched.gcwaiting, 1)
+
+	// 抢占所有运行中的G
 	preemptall()
+
+	// 停止当前的P
 	// stop current P
 	_g_.m.p.ptr().status = _Pgcstop // Pgcstop is only diagnostic.
+
+	// 减少需要停止的P数量(当前的P算一个)
 	sched.stopwait--
+
+	// 抢占所有在Psyscall状态的P, 防止它们重新参与调度
+	//
 	// try to retake all P's in Psyscall status
 	for _, p := range allp {
 		s := p.status
@@ -1008,6 +1021,9 @@ func stopTheWorldWithSema() {
 			sched.stopwait--
 		}
 	}
+
+	// 防止所有空闲的P重新参与调度
+	//
 	// stop idle P's
 	for {
 		p := pidleget()
@@ -1020,9 +1036,14 @@ func stopTheWorldWithSema() {
 	wait := sched.stopwait > 0
 	unlock(&sched.lock)
 
+	// 如果仍有需要停止的P, 则等待它们停止
+	//
 	// wait for remaining P's to stop voluntarily
 	if wait {
 		for {
+
+			// 循环等待 + 抢占所有运行中的G
+			//
 			// wait for 100us, then try to re-preempt in case of any races
 			if notetsleep(&sched.stopnote, 100*1000) {
 				noteclear(&sched.stopnote)
@@ -1032,6 +1053,8 @@ func stopTheWorldWithSema() {
 		}
 	}
 
+	// 逻辑正确性检查
+	//
 	// sanity checks
 	bad := ""
 	if sched.stopwait != 0 {
@@ -1054,8 +1077,13 @@ func stopTheWorldWithSema() {
 	if bad != "" {
 		throw(bad)
 	}
+
+	// 到这里所有运行中的G都会变为 【待运行】, 并且所有的P都不能被M获取
+	// 也就是说所有的go代码(除了当前的)都会停止运行, 并且不能运行新的go代码
 }
 
+
+// todo 启动 GC 之后的 停止世界
 func startTheWorldWithSema(emitTraceEvent bool) int64 {
 	mp := acquirem() // disable preemption because it can be holding p in a local var
 	if netpollinited() {
@@ -1064,19 +1092,28 @@ func startTheWorldWithSema(emitTraceEvent bool) int64 {
 	}
 	lock(&sched.lock)
 
+
+	// 如果要求改变gomaxprocs则调整P的数量
+	// procresize会返回有可运行任务的P的链表
 	procs := gomaxprocs
 	if newprocs != 0 {
 		procs = newprocs
 		newprocs = 0
 	}
 	p1 := procresize(procs)
+
+	// 取消GC等待标记
 	sched.gcwaiting = 0
+
+	// 如果sysmon在等待则唤醒它
 	if sched.sysmonwait != 0 {
 		sched.sysmonwait = 0
 		notewakeup(&sched.sysmonnote)
 	}
 	unlock(&sched.lock)
 
+
+	// 唤醒有可运行任务的P
 	for p1 != nil {
 		p := p1
 		p1 = p1.link.ptr()
@@ -1100,6 +1137,9 @@ func startTheWorldWithSema(emitTraceEvent bool) int64 {
 		traceGCSTWDone()
 	}
 
+	// 如果有空闲的P，并且没有自旋中的M  则 唤醒 或者 创建 一个M
+	//
+	//
 	// Wakeup an additional proc in case we have excessive runnable goroutines
 	// in local queues or in the global queue. If we don't, the proc will park itself.
 	// If we have lots of excessive work, resetspinning will unpark additional procs as necessary.
@@ -2637,7 +2677,7 @@ top:
 		}
 	}
 	if gp == nil && gcBlackenEnabled != 0 {
-		gp = gcController.findRunnableGCWorker(_g_.m.p.ptr())
+		gp = gcController.findRunnableGCWorker(_g_.m.p.ptr())  // 在 并行 gc 中, 后台为 每个P启动了一个后台标记任务, 但是可以同时工作的只有25%, 这个逻辑在协程M获取G时调用
 		tryWakeP = tryWakeP || gp != nil
 	}
 	if gp == nil {
@@ -4736,7 +4776,9 @@ func checkdead() {
 //
 //	这是用于测试的变量. 它通常不会改变.
 //
-var forcegcperiod int64 = 2 * 60 * 1e9     // todo 定时 gc 的间隔
+// todo forcegcperiod的定义是 2分钟, 也就是2分钟内没有执行过GC就会强制触发
+//
+var forcegcperiod int64 = 2 * 60 * 1e9     // todo 定时 gc 的间隔  2分钟
 
 // todo 抢占函数  【超级重要】
 //

@@ -48,10 +48,26 @@ const (
 //
 // The world must be stopped.
 //
+// todo 从root对象开始进行gc扫描     (计算扫描根对象的任务数量)
+//
+// `gcMarkRootPrepare()` 将根扫描作业（堆栈，全局变量和某些杂项）排队，并初始化与扫描相关的状态。
+//
+//  必须停止世界。
+//
+//
+// 在GC的标记阶段首先需要标记的就是" root对象", 从根对象开始可到达的所有对象都会被认为是存活的.
+// 根对象包含了全局变量, 各个G的栈上的变量等, GC会先扫描根对象然后再扫描根对象可到达的所有对象.
+//
+//
 //go:nowritebarrier
 func gcMarkRootPrepare() {
+
+	// 释放mcache中的所有span的任务, 只在完成标记阶段(mark termination)中执行
 	work.nFlushCacheRoots = 0
 
+
+	// 计算block数量的函数, rootBlockBytes是256KB
+	//
 	// Compute how many data and BSS root blocks there are.
 	nBlocks := func(bytes uintptr) int {
 		return int((bytes + rootBlockBytes - 1) / rootBlockBytes)
@@ -60,6 +76,13 @@ func gcMarkRootPrepare() {
 	work.nDataRoots = 0
 	work.nBSSRoots = 0
 
+	// data和bss每一轮GC只扫描一次
+	// 并行GC中会在后台标记任务中扫描, 完成标记阶段(mark termination)中不扫描
+	// 非并行GC会在完成标记阶段(mark termination)中扫描
+
+
+	// 计算扫描可读写的全局变量的任务数量
+	//
 	// Scan globals.
 	for _, datap := range activeModules() {
 		nDataRoots := nBlocks(datap.edata - datap.data)
@@ -68,6 +91,7 @@ func gcMarkRootPrepare() {
 		}
 	}
 
+	// 计算扫描只读的全局变量的任务数量
 	for _, datap := range activeModules() {
 		nBSSRoots := nBlocks(datap.ebss - datap.bss)
 		if nBSSRoots > work.nBSSRoots {
@@ -75,6 +99,12 @@ func gcMarkRootPrepare() {
 		}
 	}
 
+	// span中的finalizer和各个G的栈每一轮GC只扫描一次
+
+
+	// 计算扫描span中的finalizer的任务数量
+	//
+	//
 	// Scan span roots for finalizer specials.
 	//
 	// We depend on addfinalizer to mark objects that get
@@ -87,6 +117,9 @@ func gcMarkRootPrepare() {
 	// this mark phase.
 	work.nSpanRoots = mheap_.sweepSpans[mheap_.sweepgen/2%2].numBlocks()
 
+	// 计算扫描各个G的栈的任务数量
+	//
+	//
 	// Scan stacks.
 	//
 	// Gs may be created after this point, but it's okay that we
@@ -96,6 +129,9 @@ func gcMarkRootPrepare() {
 	// termination.
 	work.nStackRoots = int(atomic.Loaduintptr(&allglen))
 
+	// 计算总任务数量
+	// 后台标记任务会对markrootNext进行原子递增, 来决定做哪个任务
+	// 这种用数值来实现锁自由队列的办法挺聪明的, 尽管google工程师觉得不好(看后面markroot函数的分析)
 	work.markrootNext = 0
 	work.markrootJobs = uint32(fixedRootCount + work.nFlushCacheRoots + work.nDataRoots + work.nBSSRoots + work.nSpanRoots + work.nStackRoots)
 }
@@ -131,6 +167,8 @@ fail:
 // ptrmask for an allocation containing a single pointer.
 var oneptrmask = [...]uint8{1}
 
+// 执行根对象扫描工作
+//
 // markroot scans the i'th root.
 //
 // Preemption must be disabled (because this uses a gcWork).
@@ -951,6 +989,9 @@ const (
 	gcDrainFractional
 )
 
+// todo 用于执行标记  (GC 相关)
+//
+//
 // gcDrain scans roots and objects in work buffers, blackening grey
 // objects until it is unable to get more work. It may return before
 // GC is done; it's the caller's responsibility to balance work from
@@ -977,12 +1018,21 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 	}
 
 	gp := getg().m.curg
+
+	// 看到抢占标志时是否要返回
 	preemptible := flags&gcDrainUntilPreempt != 0
+
+	// 是否计算后台的扫描量来减少辅助GC和唤醒等待中的G
 	flushBgCredit := flags&gcDrainFlushBgCredit != 0
+
+	// 是否只执行一定量的工作
 	idle := flags&gcDrainIdle != 0
 
+	// 记录初始的已扫描数量
 	initScanWork := gcw.scanWork
 
+	// 扫描idleCheckThreshold(100000)个对象以后检查是否要返回
+	//
 	// checkWork is the scan work before performing the next
 	// self-preempt check.
 	checkWork := int64(1<<63 - 1)
@@ -996,22 +1046,40 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 		}
 	}
 
+
+	// 如果根对象未扫描完, 则先扫描根对象
 	// Drain root marking jobs.
 	if work.markrootNext < work.markrootJobs {
+
+		// 如果标记了preemptible, 循环直到被抢占
 		for !(preemptible && gp.preempt) {
+
+			// 从根对象扫描队列取出一个值(原子递增)
 			job := atomic.Xadd(&work.markrootNext, +1) - 1
 			if job >= work.markrootJobs {
 				break
 			}
+
+			// 执行根对象扫描工作
 			markroot(gcw, job)
+
 			if check != nil && check() {
 				goto done
 			}
 		}
 	}
 
+
+	// 根对象已经在标记队列中, 消费标记队列
+	// 如果标记了preemptible, 循环直到被抢占
+	//
 	// Drain heap marking jobs.
 	for !(preemptible && gp.preempt) {
+
+		// 如果全局标记队列为空, 把本地标记队列的一部分工作分过去
+		// (如果wbuf2不为空则移动wbuf2过去, 否则移动wbuf1的一半过去)
+		//
+		//
 		// Try to keep work available on the global queue. We used to
 		// check if there were waiting workers, but it's better to
 		// just keep work available than to make workers wait. In the
@@ -1032,17 +1100,29 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 				b = gcw.tryGet()
 			}
 		}
+
+
+		// 获取不到对象, 标记队列已为空, 跳出循环
 		if b == 0 {
 			// Unable to get work.
 			break
 		}
+
+		// 扫描获取到的对象
 		scanobject(b, gcw)
 
+		// 如果已经扫描了一定数量的对象(gcCreditSlack的值是2000)
+		//
+		//
 		// Flush background scan work credit to the global
 		// account if we've accumulated enough locally so
 		// mutator assists can draw on it.
 		if gcw.scanWork >= gcCreditSlack {
+
+			// 把扫描的对象数量添加到全局
 			atomic.Xaddint64(&gcController.scanWork, gcw.scanWork)
+
+			// 减少辅助GC的工作量和唤醒等待中的G
 			if flushBgCredit {
 				gcFlushBgCredit(gcw.scanWork - initScanWork)
 				initScanWork = 0
@@ -1060,9 +1140,14 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 	}
 
 done:
+
+	// 把扫描的对象数量添加到全局
+	//
 	// Flush remaining scan work credit.
 	if gcw.scanWork > 0 {
 		atomic.Xaddint64(&gcController.scanWork, gcw.scanWork)
+
+		// 减少辅助GC的工作量和唤醒等待中的G
 		if flushBgCredit {
 			gcFlushBgCredit(gcw.scanWork - initScanWork)
 		}
@@ -1534,6 +1619,8 @@ func gcmarknewobject(obj, size, scanSize uintptr) {
 	gcw.scanWork += int64(scanSize)
 }
 
+// 标记所有tiny alloc等待合并的对象
+//
 // gcMarkTinyAllocs greys all active tiny alloc blocks.
 //
 // The world must be stopped.
@@ -1543,8 +1630,13 @@ func gcMarkTinyAllocs() {
 		if c == nil || c.tiny == 0 {
 			continue
 		}
+
+		// 标记各个P中的mcache中的tiny
+		// 在上面的mallocgc函数中可以看到tiny是当前等待合并的对象
 		_, span, objIndex := findObject(c.tiny, 0, 0)
 		gcw := &p.gcw
+
+		// 标记一个对象存活, 并把它加到标记队列(该对象变为灰色)
 		greyobject(c.tiny, 0, 0, span, gcw, objIndex)
 	}
 }

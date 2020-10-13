@@ -42,6 +42,9 @@ type sweepdata struct {
 	npausesweep uint32
 }
 
+// 会清扫上一轮GC未清扫的span, 确保上一轮GC已完成
+//
+//
 // finishsweep_m ensures that all spans are swept.
 //
 // The world must be stopped. This ensures there are no sweeps in
@@ -49,6 +52,11 @@ type sweepdata struct {
 //
 //go:nowritebarrier
 func finishsweep_m() {
+
+	// sweepone会取出一个未sweep的span然后执行sweep
+	// 详细将在下面sweep阶段时分析
+	//
+	//
 	// Sweeping must be complete before marking commences, so
 	// sweep any unswept spans. If this is a concurrent GC, there
 	// shouldn't be any spans left to sweep, so this should finish
@@ -58,6 +66,19 @@ func finishsweep_m() {
 		sweep.npausesweep++
 	}
 
+
+	// 所有span都sweep完成后, 启动一个新的markbit时代
+	// 这个函数是实现span的gcmarkBits和allocBits的分配和复用的关键, 流程如下
+	// 		- span分配gcmarkBits和allocBits
+	// 		- span完成sweep
+	// 		  		- 原allocBits不再被使用
+	// 		  		- gcmarkBits变为allocBits
+	// 		  		- 分配新的gcmarkBits
+	// 		- 开启新的markbit时代
+	// 		- span完成sweep, 同上
+	// 		- 开启新的markbit时代
+	// 		  		- 2个时代之前的bitmap将不再被使用, 可以复用这些bitmap
+	//
 	nextMarkBitArenaEpoch()
 }
 
