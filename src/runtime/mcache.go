@@ -55,6 +55,8 @@ type mcache struct {
 	// todo 按class分组的mspan列表   （len == 134 ）
 	//
 	// alloc为mspan的指针数组， 数组大小为class总数的2倍   （我们一共有 67 类 class, 所以 67*2 == 134）
+	//
+	// todo 根据对象是否包含指针， 将对象分为 noscan 和 scan 两类， 其中 noscan 代表没有指针， 而 scan 则代表有指针， 需要 GC进行扫描
 	alloc [numSpanClasses]*mspan // spans to allocate from, indexed by spanClass
 
 	stackcache [_NumStackOrders]stackfreelist
@@ -98,6 +100,8 @@ type stackfreelist struct {
 }
 
 // dummy mspan that contains no free objects.
+//
+//不包含任何空闲对象的虚拟mspan
 var emptymspan mspan
 
 func allocmcache() *mcache {
@@ -137,21 +141,35 @@ func freemcache(c *mcache) {
 //
 // Must run in a non-preemptible context since otherwise the owner of
 // c could change.
+//
+// todo 申请新的span  (从 mheap 上申请)
+//
+// `refill()`获取 c的span class  => `spc` 的新span。
+// 			此范围将至少有一个自由对象。 c中的当前 span 必须已满
+//
+//  必须在不可抢占的上下文中运行，因为否则 c 的所有者 可能会更改。
 func (c *mcache) refill(spc spanClass) {
-	// Return the current cached span to the central lists.
+
+	// Return the current cached span to the central lists.    将当前的缓存范围返回到 `central` 列表
 	s := c.alloc[spc]
 
+	// todo 确保当前的span所有元素都已分配
+	// 当前 span 中还有剩余 内存没被分配给 obj    (正常进入这个方法, 已经是 span 没剩内存了)
 	if uintptr(s.allocCount) != s.nelems {
 		throw("refill of span with free space remaining")
 	}
+
+	// 看不懂这个 if
 	if s != &emptymspan {
-		// Mark this span as no longer cached.
+		// Mark this span as no longer cached.  将此范围标记为不再缓存。
 		if s.sweepgen != mheap_.sweepgen+3 {
 			throw("bad sweepgen in refill")
 		}
 		atomic.Store(&s.sweepgen, mheap_.sweepgen)
 	}
 
+	// 向mcentral 申请一个新的span
+	//
 	// Get a new cached span from the central lists.
 	s = mheap_.central[spc].mcentral.cacheSpan()
 	if s == nil {
@@ -164,8 +182,11 @@ func (c *mcache) refill(spc spanClass) {
 
 	// Indicate that this span is cached and prevent asynchronous
 	// sweeping in the next sweep phase.
+	//
+	// 表明 此 span 已缓存，并防止在下一个 扫描阶段进行异步扫描
 	s.sweepgen = mheap_.sweepgen + 3
 
+	// 设置新的span到mcache中
 	c.alloc[spc] = s
 }
 

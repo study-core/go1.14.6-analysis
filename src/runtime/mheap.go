@@ -31,6 +31,8 @@ const (
 
 // todo 内存分配, 堆结构定义   heap结构定义
 //
+//		todo 用于管理heap的对象, 全局只有一个
+//
 //	每个mcentral对象只管理特定的class规格的span。 事实上每种class都会对应一个 mcentral,这个mcentral的集合存放于mheap数据结构中
 //
 // Main malloc heap.
@@ -304,7 +306,7 @@ type mheap struct {
 	// curArena is the arena that the heap is currently growing
 	// into. This should always be physPageSize-aligned.
 	//
-	// curArena 是 堆当前正在成长的 arena。 这应该始终与 physPageSize 对齐
+	// todo curArena 是 堆当前正在成长的 arena。 这应该始终与 physPageSize 对齐
 	curArena struct {
 		base, end uintptr
 	}
@@ -539,6 +541,8 @@ type mSpanList struct {
 
 // todo 内存管理类型 span类
 //
+//		todo 用于分配对象的区块
+//
 //		mspan 维护 一个个 内存块
 //
 //		go 的内存管理以 span为单位,
@@ -555,7 +559,7 @@ type mspan struct {
 	list *mSpanList // For debugging. TODO: Remove.
 
 
-	// 当前 span 所管理页的起始地址， 也即所管理页的地址
+	// todo 当前 span 所管理页的起始地址， 也即所管理页的地址
 	startAddr uintptr // address of first byte of span aka s.base()
 	// 管理的页数
 	npages    uintptr // number of pages in span
@@ -583,7 +587,7 @@ type mspan struct {
 	// TODO: Look up nelems from sizeclass and remove this field if it
 	// helps performance.
 	//
-	// 块个数， 也即有多少个块可供分配
+	// 当前 span 中的 块个数， 也即有多少个块可供分配
 	nelems uintptr // number of object in the span.
 
 	// Cache of the allocBits at freeindex. allocCache is shifted
@@ -592,6 +596,8 @@ type mspan struct {
 	// ctz (count trailing zero) to use it directly.
 	// allocCache may contain bits beyond s.nelems; the caller must ignore
 	// these.
+	//
+	// todo 一个 轻量的 位图 (优化 freeindex + allocBits 的)
 	//
 	// 使用 freeindex + allocBits 可以在分配时跳过已分配的元素, 把对象设置在未分配的元素中,
 	// 但因为每次都去访问 allocBits效率会比较慢, span中有一个整数型的 allocCache 用于缓存 freeindex 开始的bitmap, 缓存的bit值与原值相反.
@@ -1067,12 +1073,17 @@ func (h *mheap) reclaimChunk(arenas []arenaIdx, pageIdx, n uintptr) uintptr {
 	return nFreed
 }
 
+// todo mheap分配span
+//
 // alloc allocates a new span of npage pages from the GC'd heap.
 //
 // spanclass indicates the span's size class and scannability.
 //
 // If needzero is true, the memory for the returned span will be zeroed.
 func (h *mheap) alloc(npages uintptr, spanclass spanClass, needzero bool) *mspan {
+
+	// 在g0的栈空间中调用 reclaim函数 和 allocSpan函数
+	//
 	// Don't do any operations that lock the heap on the G stack.
 	// It might trigger stack growth, and the stack growth code needs
 	// to be able to allocate heap.
@@ -1484,6 +1495,8 @@ HaveSpan:
 	return s
 }
 
+// todo 向arena区域申请新span
+//
 // Try to add at least npage pages of memory to the heap,
 // returning whether it worked.
 //
@@ -1498,7 +1511,7 @@ func (h *mheap) grow(npage uintptr) bool {
 		// Not enough room in the current arena. Allocate more
 		// arena space. This may not be contiguous with the
 		// current arena, so we have to request the full ask.
-		av, asize := h.sysAlloc(ask)
+		av, asize := h.sysAlloc(ask)   // 调用 mheap.sysAlloc 函数 申请
 		if av == nil {
 			print("runtime: out of memory: cannot allocate ", ask, "-byte block (", memstats.heap_sys, " in use)\n")
 			return false

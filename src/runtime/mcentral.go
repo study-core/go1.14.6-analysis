@@ -16,6 +16,8 @@ import "runtime/internal/atomic"
 
 // todo 管理 span 的数据结构 (其 位于 spans 区？)
 //
+//		todo 全局的mspan缓存, 一共有67*2=134个
+//
 // todo central则是全局资源， 为多个线程服务
 //		当某个线程内存不足时会向central申请， 当某个线程释放内存时又会回收进central
 //
@@ -56,32 +58,63 @@ func (c *mcentral) init(spc spanClass) {
 	c.empty.init()
 }
 
-// Allocate a span to use in an mcache.
+// todo 向mcentral申请一个新的span    (一般就是 交给 mcache 使用)
+//
+// Allocate a span to use in an mcache.   分配 span 以在mcache中使用
 func (c *mcentral) cacheSpan() *mspan {
-	// Deduct credit for this span allocation and sweep if necessary.
-	spanBytes := uintptr(class_to_allocnpages[c.spanclass.sizeclass()]) * _PageSize
-	deductSweepCredit(spanBytes, 0)
 
+	// 让当前G协助一部分的sweep工作
+	//
+	// Deduct credit for this span allocation and sweep if necessary.    扣除 此 span 分配 的信用并在必要时进行扫描
+	// 计算分配出来的 span 的大小
+	spanBytes := uintptr(class_to_allocnpages[c.spanclass.sizeclass()]) * _PageSize
+	deductSweepCredit(spanBytes, 0) // 扣除 此 span 分配 的信用并在必要时进行扫描
+
+	// 对mcentral上锁, 因为可能会有多个M(P)同时访问
 	lock(&c.lock)
+
 	traceDone := false
 	if trace.enabled {
 		traceGCSweepStart()
 	}
 	sg := mheap_.sweepgen
 retry:
+
+	// mcentral里面有两个span的链表
+	// 			- nonempty:  表示 确定 该span最少有一个未分配的元素
+	// 			- empty:  表示 不确定 该span最少有一个未分配的元素
+	//
+	// 这里优先查找nonempty的链表
+	// sweepgen每次GC都会增加2
+	// 			- 当 (sweepgen == 全局sweepgen): 		表示span已经sweep过
+	// 			- 当 (sweepgen == 全局sweepgen - 1): 	表示span正在sweep
+	// 			- 当 (sweepgen == 全局sweepgen - 2): 	表示span等待sweep
+	//
 	var s *mspan
+
+	// todo 先查找 noempty 链表
 	for s = c.nonempty.first; s != nil; s = s.next {
+
+		// 如果span等待sweep, 尝试原子修改sweepgen为全局sweepgen-1
 		if s.sweepgen == sg-2 && atomic.Cas(&s.sweepgen, sg-2, sg-1) {
+
+			// 修改成功则把span移到empty链表, sweep它然后跳到havespan
 			c.nonempty.remove(s)
 			c.empty.insertBack(s)
 			unlock(&c.lock)
 			s.sweep(true)
 			goto havespan
 		}
+
+		// 如果这个span正在被其他线程sweep, 就跳过
 		if s.sweepgen == sg-1 {
 			// the span is being swept by background sweeper, skip
 			continue
 		}
+
+		// span已经sweep过
+		// 因为nonempty链表中的span确定最少有一个未分配的元素, 这里可以直接使用它
+		//
 		// we have a nonempty span that does not require sweeping, allocate from it
 		c.nonempty.remove(s)
 		c.empty.insertBack(s)
@@ -89,15 +122,25 @@ retry:
 		goto havespan
 	}
 
+	// todo 再查找 empty 链表
 	for s = c.empty.first; s != nil; s = s.next {
+
+		// 如果span等待sweep, 尝试原子修改sweepgen为全局sweepgen-1
 		if s.sweepgen == sg-2 && atomic.Cas(&s.sweepgen, sg-2, sg-1) {
+
+			// 把span放到empty链表的最后
+			//
 			// we have an empty span that requires sweeping,
 			// sweep it and see if we can free some space in it
 			c.empty.remove(s)
 			// swept spans are at the end of the list
 			c.empty.insertBack(s)
 			unlock(&c.lock)
+
+			// 尝试sweep
 			s.sweep(true)
+
+			// sweep 后 还需要检测是否有未分配的对象, 如果有则可以使用它
 			freeIndex := s.nextFreeIndex()
 			if freeIndex != s.nelems {
 				s.freeindex = freeIndex
@@ -108,10 +151,15 @@ retry:
 			// it is already in the empty list, so just retry
 			goto retry
 		}
+
+		// 如果这个span正在被其他线程sweep, 就跳过
 		if s.sweepgen == sg-1 {
 			// the span is being swept by background sweeper, skip
 			continue
 		}
+
+		// 找不到有未分配对象的span
+		//
 		// already swept empty span,
 		// all subsequent ones must also be either swept or in process of sweeping
 		break
@@ -122,6 +170,9 @@ retry:
 	}
 	unlock(&c.lock)
 
+	// 找不到有未分配对象的span, 需要从mheap分配
+	// 分配完成后加到 empty 链表中
+	//
 	// Replenish central list if empty.
 	s = c.grow()
 	if s == nil {
@@ -137,6 +188,9 @@ havespan:
 	if trace.enabled && !traceDone {
 		traceGCSweepDone()
 	}
+
+	// 统计span中未分配的元素数量, 加到mcentral.nmalloc中
+	// 统计span中未分配的元素总大小, 加到memstats.heap_live中
 	n := int(s.nelems) - int(s.allocCount)
 	if n == 0 || s.freeindex == s.nelems || uintptr(s.allocCount) == s.nelems {
 		throw("span has no free objects")
@@ -146,14 +200,19 @@ havespan:
 	atomic.Xadd64(&c.nmalloc, int64(n))
 	usedBytes := uintptr(s.allocCount) * s.elemsize
 	atomic.Xadd64(&memstats.heap_live, int64(spanBytes)-int64(usedBytes))
-	if trace.enabled {
+	if trace.enabled { // 跟踪处理
 		// heap_live changed.
 		traceHeapAlloc()
 	}
+
+	// 如果当前在GC中, 因为heap_live改变了, 重新调整G辅助标记工作的值
+	// 详细请参考下面对revise函数的解析
 	if gcBlackenEnabled != 0 {
 		// heap_live changed.
-		gcController.revise()
+		gcController.revise()  // 计算新的 辅助比率 用来算出 是否达到需要启动GC的内存分配量
 	}
+
+	// 根据freeindex更新allocCache
 	freeByteBase := s.freeindex &^ (64 - 1)
 	whichByte := freeByteBase / 8
 	// Init alloc bits cache.
@@ -267,11 +326,17 @@ func (c *mcentral) freeSpan(s *mspan, preserve bool, wasempty bool) bool {
 	return true
 }
 
+// todo mcentral向mheap申请一个新的span
+//
 // grow allocates a new empty span from the heap and initializes it for c's size class.
 func (c *mcentral) grow() *mspan {
+
+	// 根据mcentral的类型计算需要申请的span的大小(除以8K = 有多少页)和可以保存多少个元素
 	npages := uintptr(class_to_allocnpages[c.spanclass.sizeclass()])
 	size := uintptr(class_to_size[c.spanclass.sizeclass()])
 
+
+	// 向mheap申请一个新的span, 以页(8K)为单位
 	s := mheap_.alloc(npages, c.spanclass, true)
 	if s == nil {
 		return nil
@@ -281,6 +346,8 @@ func (c *mcentral) grow() *mspan {
 	// n := (npages << _PageShift) / size
 	n := (npages << _PageShift) >> s.divShift * uintptr(s.divMul) >> s.divShift2
 	s.limit = s.base() + size*n
+
+	// 分配并 初始化span的 allocBits 和 gcmarkBits
 	heapBitsForAddr(s.base()).initSpan(s)
 	return s
 }

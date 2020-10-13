@@ -828,18 +828,39 @@ var zerobase uintptr
 
 // nextFreeFast returns the next free object if one is quickly available.
 // Otherwise it returns 0.
+//
+// todo 快速从 span 中分配出 obj 的内存    (尝试性的 快速分配)
+//
+// nextFreeFast 返回下一个空闲对象（如果一个对象很快可用
+// 否则返回0。
 func nextFreeFast(s *mspan) gclinkptr {
-	theBit := sys.Ctz64(s.allocCache) // Is there a free object in the allocCache?
+
+	// 获取第一个非0 的bit是第几个bit, 也就是哪个元素是未分配的
+	theBit := sys.Ctz64(s.allocCache) // Is there a free object in the allocCache?   allocCache中是否有空闲对象？
+
+	// 找到未分配的元素
 	if theBit < 64 {
 		result := s.freeindex + uintptr(theBit)
+
+		// 要求索引值小于元素数量
 		if result < s.nelems {
+
+			// 下一个freeindex
 			freeidx := result + 1
+
+			// 可以被64整除时需要特殊处理(参考nextFree)
 			if freeidx%64 == 0 && freeidx != s.nelems {
 				return 0
 			}
+
+			// 更新freeindex和allocCache(高位都是0, 用尽以后会更新)
 			s.allocCache >>= uint(theBit + 1)
 			s.freeindex = freeidx
+
+			// 添加已分配的元素计数
 			s.allocCount++
+
+			// 返回元素所在的地址
 			return gclinkptr(result*s.elemsize + s.base())
 		}
 	}
@@ -856,15 +877,21 @@ func nextFreeFast(s *mspan) gclinkptr {
 // Must run in a non-preemptible context since otherwise the owner of
 // c could change.
 func (c *mcache) nextFree(spc spanClass) (v gclinkptr, s *mspan, shouldhelpgc bool) {
+
+	// 找到下一个freeindex 和 更新allocCache
 	s = c.alloc[spc]
 	shouldhelpgc = false
 	freeIndex := s.nextFreeIndex()
+
+	// 如果span里面所有元素都已分配, 则需要获取新的span
 	if freeIndex == s.nelems {
 		// The span is full.
 		if uintptr(s.allocCount) != s.nelems {
 			println("runtime: s.allocCount=", s.allocCount, "s.nelems=", s.nelems)
 			throw("s.allocCount != s.nelems && freeIndex == s.nelems")
 		}
+
+		// 申请新的span
 		c.refill(spc)
 		shouldhelpgc = true
 		s = c.alloc[spc]
@@ -876,7 +903,10 @@ func (c *mcache) nextFree(spc spanClass) (v gclinkptr, s *mspan, shouldhelpgc bo
 		throw("freeIndex is not valid")
 	}
 
+	// 返回元素所在的地址
 	v = gclinkptr(freeIndex*s.elemsize + s.base())
+
+	// 添加已分配的元素计数
 	s.allocCount++
 	if uintptr(s.allocCount) > s.nelems {
 		println("s.allocCount=", s.allocCount, "s.nelems=", s.nelems)
@@ -885,7 +915,7 @@ func (c *mcache) nextFree(spc spanClass) (v gclinkptr, s *mspan, shouldhelpgc bo
 	return
 }
 
-// todo 内存分配 函数 (入口)
+// todo 内存分配 函数 (入口)  给对象分配内存
 //
 // Allocate an object of size bytes.
 // Small objects are allocated from the per-P cache's free lists.
@@ -926,6 +956,9 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		return persistentalloc(size, align, &memstats.other_sys)
 	}
 
+	// 判断是否要辅助GC工作
+	// gcBlackenEnabled在GC的标记阶段会开启
+	//
 	// assistG is the G to charge for this allocation, or nil if
 	// GC is not currently active.
 	//
@@ -942,16 +975,21 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		// for internal fragmentation at the end of mallocgc.
 		assistG.gcAssistBytes -= int64(size)
 
+		// 会按分配的大小判断需要协助GC完成多少工作
 		if assistG.gcAssistBytes < 0 {
 			// This G is in debt. Assist the GC to correct
 			// this before allocating. This must happen
 			// before disabling preemption.    这个 G 负债累累。 协助 GC进行更正，然后再分配。 这必须在禁用抢占之前发生。
 			//
 			// 当正在 GC 时, 当前 G 继续运行, 不过需要当前 G 辅助 gc 做一些 工作
+			//
+			// 如果GC在工作中并且当前的G分配了一定大小的内存则需要协助GC做一定的工作, todo 这个机制叫GC Assist (GC 辅助), 用于防止分配内存太快导致GC回收跟不上的情况发生.
 			gcAssistAlloc(assistG)
 		}
 	}
 
+	// 增加当前G对应的M的lock计数, 防止这个G被抢占
+	//
 	// Set mp.mallocing to keep from being preempted by GC.
 	mp := acquirem()
 	if mp.mallocing != 0 {
@@ -964,12 +1002,16 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
 	shouldhelpgc := false
 	dataSize := size
-	c := gomcache()  // 获取 运行当前 G 的 M 上的 P 的 mcache (用来先从上面 申请 内存 span)
+	c := gomcache()  // 获取 运行当前 G 的 M 上的 P 的 mcache (用来先从上面 申请 内存 span)        因为M在拥有P后会把P的mcache设到M中, 这里返回的是getg().m.mcache
 	var x unsafe.Pointer
-	noscan := typ == nil || typ.ptrdata == 0
+	noscan := typ == nil || typ.ptrdata == 0    // 是否 不包含指针 的对象
 
-	// todo 对于 小于 32 kb 的对象 分配策略
+	// todo 对于 小于 32 kb 的对象 分配策略  (分配小对象)
 	if size <= maxSmallSize {
+
+		// 如果对象不包含指针, 并且对象的大小小于16 bytes, 可以做特殊处理
+		// 这里是针对非常小的对象的优化, 因为span的元素最小只能是8 byte, 如果对象更小那么很多空间都会被浪费掉
+		// 非常小的对象可以整合在"class 2 noscan"的元素(大小为16 byte)中
 		if noscan && size < maxTinySize {
 			// Tiny allocator.
 			//
@@ -1011,7 +1053,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 			}
 			if off+size <= maxTinySize && c.tiny != 0 {
 				// The object fits into existing tiny block.
-				x = unsafe.Pointer(c.tiny + off)
+				x = unsafe.Pointer(c.tiny + off)  // 将 分配出来的 地址 uintptr 转成 Pointer 类型, 并赋值给 返回值 x todo (这个就是： 将分配出来的内存实例化给对象 动作)
 				c.tinyoffset = off + size
 				c.local_tinyallocs++
 				mp.mallocing = 0
@@ -1034,7 +1076,10 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				c.tinyoffset = size
 			}
 			size = maxTinySize
-		} else {
+		} else {  // 否则按普通的小对象分配
+
+
+			// 首先获取对象的大小应该使用哪个span类型
 			var sizeclass uint8
 			if size <= smallSizeMax-8 {
 				sizeclass = size_to_class8[(size+smallSizeDiv-1)/smallSizeDiv]
@@ -1042,18 +1087,25 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				sizeclass = size_to_class128[(size-smallSizeMax+largeSizeDiv-1)/largeSizeDiv]
 			}
 			size = uintptr(class_to_size[sizeclass])
-			spc := makeSpanClass(sizeclass, noscan)
-			span := c.alloc[spc]
-			v := nextFreeFast(span)
+			spc := makeSpanClass(sizeclass, noscan)  	// 等于sizeclass * 2 + (noscan ? 1 : 0)
+			span := c.alloc[spc]						// 从 该 P 的 mcache 中获取 对应的  span
+			v := nextFreeFast(span)						// 尝试快速的从 该span中分配   todo v 是被分配出来用的  地址
 			if v == 0 {
-				v, span, shouldhelpgc = c.nextFree(spc)
+				// 分配失败, 可能需要从 mcentral 或者 mheap 中获取
+				// 如果从mcentral或者mheap获取了新的span, 则 `shouldhelpgc` 会等于true
+				// shouldhelpgc会等于true时, 会在下面判断是否要触发GC
+				v, span, shouldhelpgc = c.nextFree(spc)   // 如果在 freeindex 后 (调用 nextFreeFast() 之后) 无法快速找到未分配的元素, 就需要调用 nextFree() 做出更复杂的处理
 			}
-			x = unsafe.Pointer(v)
+
+			x = unsafe.Pointer(v) // 将 分配出来的 地址 uintptr 转成 Pointer 类型, 并赋值给 返回值 x todo (这个就是： 将分配出来的内存实例化给对象 动作)
 			if needzero && span.needzero != 0 {
 				memclrNoHeapPointers(unsafe.Pointer(v), size)
 			}
 		}
 	} else {  // todo 对于 x >= 32 kb 的对象分配策略
+
+		// 大对象直接从mheap分配, 这里的s是一个特殊的span, 它的class是0
+
 		var s *mspan
 		shouldhelpgc = true
 		systemstack(func() {
@@ -1063,10 +1115,12 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		})
 		s.freeindex = 1
 		s.allocCount = 1
-		x = unsafe.Pointer(s.base())
+		x = unsafe.Pointer(s.base()) // 将 分配出来的 地址 uintptr 转成 Pointer 类型, 并赋值给 返回值 x todo (这个就是： 将分配出来的内存实例化给对象 动作)
 		size = s.elemsize
 	}
 
+
+	// 设置arena对应的bitmap, 记录哪些位置包含了指针, GC会使用bitmap扫描所有可到达的对象
 	var scanSize uintptr
 	if !noscan {
 		// If allocating a defer+arg block, now that we've picked a malloc size
@@ -1078,6 +1132,25 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		if typ == deferType {
 			dataSize = unsafe.Sizeof(_defer{})
 		}
+
+		// 这个函数非常的长, 有兴趣的可以看
+		// https://github.com/golang/go/blob/go1.9.2/src/runtime/mbitmap.go#L855
+		// 虽然代码很长但是设置的内容跟上面说过的bitmap区域的结构一样
+		// 根据类型信息设置scan bit跟pointer bit, scan bit成立表示应该继续扫描, pointer bit成立表示该位置是指针
+		// 需要注意的地方有
+		// - 如果一个类型只有开头的地方包含指针, 例如[ptr, ptr, large non-pointer data]
+		//   那么后面的部分的scan bit将会为0, 这样可以大幅提升标记的效率
+		// - 第二个slot的scan bit用途比较特殊, 它并不用于标记是否继续scan, 而是标记checkmark
+		// 什么是checkmark
+		// - 因为go的并行GC比较复杂, 为了检查实现是否正确, go需要在有一个检查所有应该被标记的对象是否被标记的机制
+		//   这个机制就是checkmark, 在开启checkmark时go会在标记阶段的最后停止整个世界然后重新执行一次标记
+		//   上面的第二个slot的scan bit就是用于标记对象在checkmark标记中是否被标记的
+		// - 有的人可能会发现第二个slot要求对象最少有两个指针的大小, 那么只有一个指针的大小的对象呢?
+		//   只有一个指针的大小的对象可以分为两种情况
+		//   对象就是指针, 因为大小刚好是1个指针所以并不需要看bitmap区域, 这时第一个slot就是checkmark
+		//   对象不是指针, 因为有tiny alloc的机制, 不是指针且只有一个指针大小的对象会分配在两个指针的span中
+		//               这时候也不需要看bitmap区域, 所以和上面一样第一个slot就是checkmark
+		//
 		heapBitsSetType(uintptr(x), size, dataSize, typ)
 		if dataSize > typ.size {
 			// Array allocation. If there are any
@@ -1092,6 +1165,9 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		c.local_scan += scanSize
 	}
 
+	// 内存屏障, 因为x86和x64的store不会乱序, 所以这里只是个针对编译器的屏障, 汇编中是ret
+	//
+	//
 	// Ensure that the stores above that initialize x to
 	// type-safe memory and set the heap bits occur before
 	// the caller can make x observable to the garbage
@@ -1100,6 +1176,9 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	// but see uninitialized memory or stale heap bits.
 	publicationBarrier()
 
+	// 如果当前在GC中, 需要立刻标记分配后的对象为"黑色", 防止它被回收
+	//
+	//
 	// Allocate black during GC.
 	// All slots hold nil so no scanning is needed.
 	// This may be racing with GC so do it atomically if there can be
@@ -1108,21 +1187,29 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		gcmarknewobject(uintptr(x), size, scanSize)
 	}
 
+
+	// Race Detector的处理(用于检测线程冲突问题)
 	if raceenabled {
 		racemalloc(x, size)
 	}
 
+	// Memory Sanitizer的处理(用于检测危险指针等内存问题)
 	if msanenabled {
 		msanmalloc(x, size)
 	}
 
+
+	// 重新允许当前的G被抢占
 	mp.mallocing = 0
 	releasem(mp)
 
+
+	// 除错记录
 	if debug.allocfreetrace != 0 {
 		tracealloc(x, size, typ)
 	}
 
+	// Profiler记录
 	if rate := MemProfileRate; rate > 0 {
 		if rate != 1 && size < c.next_sample {
 			c.next_sample -= size
@@ -1133,12 +1220,17 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		}
 	}
 
+
+	// gcAssistBytes减去"实际分配大小 - 要求分配大小", 调整到准确值
 	if assistG != nil {
 		// Account for internal fragmentation in the assist
 		// debt now that we know it.
 		assistG.gcAssistBytes -= int64(size - dataSize)
 	}
 
+
+	// 如果之前获取了新的span, 则判断是否需要后台启动GC
+	// 这里的判断逻辑(gcTrigger)会在下面详细说明
 	if shouldhelpgc {
 		if t := (gcTrigger{kind: gcTriggerHeap}); t.test() {
 			gcStart(t)  // 启动 gc
@@ -1197,6 +1289,8 @@ func reflectlite_unsafe_New(typ *_type) unsafe.Pointer {
 	return mallocgc(typ.size, typ, true)
 }
 
+// todo   new(arr)  new一个数组指针内存
+//
 // newarray allocates an array of n elements of type typ.
 func newarray(typ *_type, n int) unsafe.Pointer {
 	if n == 1 {
