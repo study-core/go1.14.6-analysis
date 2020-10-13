@@ -5666,27 +5666,42 @@ func haveexperiment(name string) bool {
 	return false
 }
 
+// todo 固定住 当前 M 和 G
+//
+// 目的是绑定G和M，并且获取M上的当前P的pid
+// 同时，另一个功能是 保证GC不在  绑定  和  解绑  之间发生
 //go:nosplit
 func procPin() int {
 	_g_ := getg()
 	mp := _g_.m
 
-	mp.locks++
+	mp.locks++		//  这里gc在开始之前，会获取当期那M，然后判断当前M上的几个参数，其中的一个参数是locks，这个只要大于0，便不会发生GC
+
+	// 这个locks会在调用pin的使用进行自增，以此来保证GC的不触发.
+	// todo 同时，有产生了一个问题，pin的调用能保证GC的不触发，那么在大量pin的调用下，极端情况下，GC是不是不会执行了呢？
+
 	return int(mp.p.ptr().id)
 }
 
+// todo 取消 固定 当前 M 和 G
+//
 //go:nosplit
 func procUnpin() {
 	_g_ := getg()
 	_g_.m.locks--
 }
 
+
+// todo sync.runtime_procPin() 函数的实现
+//
 //go:linkname sync_runtime_procPin sync.runtime_procPin
 //go:nosplit
 func sync_runtime_procPin() int {
 	return procPin()
 }
 
+// todo sync.runtime_procUnpin() 函数的实现
+//
 //go:linkname sync_runtime_procUnpin sync.runtime_procUnpin
 //go:nosplit
 func sync_runtime_procUnpin() {

@@ -280,5 +280,5 @@ func indexLocal(l unsafe.Pointer, i int) *poolLocal {
 
 // Implemented in runtime.
 func runtime_registerPoolCleanup(cleanup func())
-func runtime_procPin() int
-func runtime_procUnpin()
+func runtime_procPin() int   	// todo  runtime.sync_runtime_procPin() 才是真正的实现函数
+func runtime_procUnpin()		// todo runtime.sync_runtime_procUnpin() 才是真正的实现函数

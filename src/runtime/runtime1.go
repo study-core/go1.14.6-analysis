@@ -446,7 +446,7 @@ func timediv(v int64, div int32, rem *int32) int32 {
 //go:nosplit
 func acquirem() *m {
 	_g_ := getg()
-	_g_.m.locks++
+	_g_.m.locks++   // 这里gc在开始之前，会获取当期那M，然后判断当前M上的几个参数，其中的一个参数是locks，这个只要大于0，便不会发生GC
 	return _g_.m
 }
 

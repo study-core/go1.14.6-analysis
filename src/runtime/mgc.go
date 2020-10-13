@@ -1394,7 +1394,9 @@ func gcStart(trigger gcTrigger) {
 	// Since this is called from malloc and malloc is called in
 	// the guts of a number of libraries that might be holding
 	// locks, don't attempt to start GC in non-preemptible or
-	// potentially unstable situations.
+	// potentially unstable situations.   由于这是从malloc调用的，而malloc是在可能持有锁的许多库的内胆中调用的，因此请勿尝试在不可抢先或潜在不稳定的情况下启动GC。
+	//
+	// 这里gc在开始之前，会获取当期那M，然后判断当前M上的几个参数，其中的一个参数是locks，这个只要大于0，便不会发生GC
 	mp := acquirem()
 	if gp := getg(); gp == mp.g0 || mp.locks > 1 || mp.preemptoff != "" {
 		releasem(mp)

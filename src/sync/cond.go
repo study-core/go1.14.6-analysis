@@ -89,6 +89,8 @@ func (c *copyChecker) check() {
 // noCopy may be embedded into structs which must not be copied
 // after the first use.
 //
+// noCopy可以嵌入到第一次使用后不得复制的结构中
+//
 // See https://golang.org/issues/8005#issuecomment-190753527
 // for details.
 type noCopy struct{}
