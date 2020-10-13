@@ -124,6 +124,8 @@ semaRoot 则是 队列结构体，内部是 treap ，把和当前 g 关联的 su
 		一直到被调度器重新调度执行，会首先释放 sudog 然后再去执行别的代码逻辑。
  */
 func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags, skipframes int) {
+
+	// 获取 当前G  (当前 G 需要被 阻塞 挂起)
 	gp := getg()
 	if gp != gp.m.curg {
 		throw("semacquire not on the G stack")

@@ -105,7 +105,7 @@ func (wg *WaitGroup) Add(delta int) {
 	}
 	state := atomic.AddUint64(statep, uint64(delta)<<32)    // 把delta左移32位累加到state， 即累加到counter中
 	v := int32(state >> 32)			// 获取counter值
-	w := uint32(state)				// 获取waiter值
+	w := uint32(state)				// 获取waiter值       uint32(uint64) 是 会将前 32bit 截断的, 所以这里 我们能获取 waiter 的值
 	if race.Enabled && delta > 0 && v == int32(delta) {
 		// The first increment must be synchronized with Wait.
 		// Need to model this as a read, because there can be
@@ -120,7 +120,7 @@ func (wg *WaitGroup) Add(delta int) {
 
 
 	if w != 0 && delta > 0 && v == int32(delta) {
-		panic("sync: WaitGroup misuse: Add called concurrently with Wait")
+		panic("sync: WaitGroup misuse: Add called concurrently with Wait")  // WaitGroup滥用： Add 与 Wait 并发调用
 	}
 
 	//	经过累加后， 此时， counter >= 0
@@ -139,19 +139,22 @@ func (wg *WaitGroup) Add(delta int) {
 	// Still do a cheap sanity check to detect WaitGroup misuse.
 	//
 	//
-	//	当  waiter > 0时，此goroutine已将 counter 设置为0。
+	//	当  waiter > 0 时，此goroutine已将 counter 设置为0
+	//
 	//	现在不存在状态的并发突变：
-	//		- 添加不得与Wait同时进行，
-	//		- Wait看到counter == 0时，不会增加侍者的人数。
+	//		- Add 不得与Wait同时进行，
+	//		- Wait 看到 counter == 0 时，不会增加 Waiter 的人数。
 	//	仍然进行廉价的完整性检查以检测WaitGroup的滥用。
 	//
 	//
 	if *statep != state {
-		panic("sync: WaitGroup misuse: Add called concurrently with Wait")
+		panic("sync: WaitGroup misuse: Add called concurrently with Wait")  // WaitGroup滥用： Add 与 Wait 并发调用
 	}
 
 	// 此时, counter 一定等于0, 而waiter一定大于0 (内部维护waiter, 不会出现小于0的情况),  先把counter置为0， 再释放waiter个数的信号量
 	// Reset waiters count to 0.
+
+	//  todo 走到这里了, 说明 所有 counter 都执行了, 需要将  state 也就是 counter|waiter 的复合值 直接  清空,  不然 Wait() 中就会 panic 拉
 	*statep = 0
 	for ; w != 0; w-- {
 		runtime_Semrelease(semap, false, 0)  // 释放信号量， 执行一次释放一个， 唤醒一个等待者
@@ -200,8 +203,8 @@ func (wg *WaitGroup) Wait() {
 				race.Write(unsafe.Pointer(semap))
 			}
 			runtime_Semacquire(semap)   // 累加成功后， 等待信号量唤醒自己
-			if *statep != 0 {
-				panic("sync: WaitGroup is reused before previous Wait has returned")
+			if *statep != 0 {  // todo 能走到这里, 说明有问题了,  因为 state 的值 在 Add 中 会被 清空的
+				panic("sync: WaitGroup is reused before previous Wait has returned")   // 在先前的Wait返回之前，WaitGroup被重用
 			}
 			if race.Enabled {
 				race.Enable()
