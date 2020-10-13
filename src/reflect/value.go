@@ -1975,6 +1975,7 @@ type SliceHeader struct {
 	Cap  int
 }
 
+// 反射包中的 slice 头 类型
 // sliceHeader is a safe version of SliceHeader used within this package.
 type sliceHeader struct {
 	Data unsafe.Pointer

@@ -10,9 +10,9 @@
 #define nil ((void*)0)
 #define nelem(x) (sizeof(x)/sizeof((x)[0]))
 
-typedef uint32_t uint32;
-typedef uint64_t uint64;
-typedef uintptr_t uintptr;
+typedef uint32_t uint32;    // go 的内置类型  uint32 定义
+typedef uint64_t uint64;    // go 的内置类型  uint64 定义
+typedef uintptr_t uintptr;  // go 的内置类型  uintptr 定义
 
 /*
  * The beginning of the per-goroutine structure,

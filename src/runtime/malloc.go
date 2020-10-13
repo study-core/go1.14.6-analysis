@@ -214,7 +214,7 @@ const (
 	// 32-bit, however, this is one less than 1<<32 because the
 	// number of bytes in the address space doesn't actually fit
 	// in a uintptr.
-	maxAlloc = (1 << heapAddrBits) - (1-_64bit)*1
+	maxAlloc = (1 << heapAddrBits) - (1-_64bit)*1  // 允许用户分配的最大虚拟内存空间
 
 	// The number of bits in a heap address, the size of heap
 	// arenas, and the L1 and L2 arena map sizes are related by
