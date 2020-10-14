@@ -29,11 +29,11 @@ type timer struct {
 	// Timer wakes up at when, and then at when+period, ... (period > 0 only)
 	// each time calling f(arg, now) in the timer goroutine, so f must be
 	// a well-behaved function and not block.
-	when   int64
-	period int64
-	f      func(interface{}, uintptr)
-	arg    interface{}
-	seq    uintptr
+	when   int64			// 定时时间点
+	period int64			// 当前定时器周期触发间隔 (Ticker 中使用到) （对于Timer来说， 此值恒为0）
+	f      func(interface{}, uintptr)		// 定时器触发时执行函数 f
+	arg    interface{}						// 定时器触发时执行函数 f 的第一个参数
+	seq    uintptr							// 定时器触发时执行函数 f 的第二个参数  (该参数只在网络收发场景下使用)  （Timer并不使用该参数）
 
 	// What to set the when field to in timerModifiedXX status.  将when字段设置为timerModifiedXX状态的内容
 	//
