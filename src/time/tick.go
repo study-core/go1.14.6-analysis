@@ -8,6 +8,8 @@ import "errors"
 
 // A Ticker holds a channel that delivers `ticks' of a clock
 // at intervals.
+//
+// Ticker 持有一个 chan ，该 chan 每隔一段时间便发出时钟的“滴答声”
 type Ticker struct {
 	C <-chan Time // The channel on which the ticks are delivered.
 	r runtimeTimer

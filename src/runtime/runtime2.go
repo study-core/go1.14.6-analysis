@@ -521,7 +521,7 @@ type g struct {
 	waiting        *sudog         // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
 	cgoCtxt        []uintptr      // cgo traceback context
 	labels         unsafe.Pointer // profiler labels
-	timer          *timer         // cached timer for time.Sleep
+	timer          *timer         // cached timer for time.Sleep   todo 缓存 time.Sleep() 语句的 定时器
 	selectDone     uint32         // are we participating in a select and did someone win the race?
 
 	// Per-G GC state
@@ -744,6 +744,11 @@ type p struct {
 	// The when field of the first entry on the timer heap.
 	// This is updated using atomic functions.
 	// This is 0 if the timer heap is empty.
+	//
+	//
+	//	记录 timer 堆上的 第一个 timer 的 定时时间点  todo (因为  马上当前 P 就要 运行 该 timer 了)
+	//	这是使用原子函数更新的。
+	//	如果计时器堆为空，则为0
 	timer0When uint64
 
 	// Per-P GC state
@@ -762,38 +767,55 @@ type p struct {
 	// filled by write barriers, drained by mutator assists, and
 	// disposed on certain GC state transitions.
 	//
-	// GC的本地工作队列
-	// gcw是 当前P的GC工作缓冲区高速缓存。 工作缓冲区由写屏障填充，由辅助更改器耗尽，并放置在某些GC状态转换上。
+	// GC 的本地工作队列
+	// gcw是 当前P的GC工作缓冲区高速缓存。工作缓冲区由写屏障填充，由辅助更改器耗尽，并放置在某些GC状态转换上。
 	gcw gcWork
 
 	// wbBuf is this P's GC write barrier buffer.
 	//
 	// TODO: Consider caching this in the running G.
-	wbBuf wbBuf
+	wbBuf wbBuf    // 这个是 P 的 GC 写屏障 缓存队列
 
 	runSafePointFn uint32 // if 1, run sched.safePointFn at next safe point
 
 	// Lock for timers. We normally access the timers while running
 	// on this P, but the scheduler can also do it from a different P.
+	//
+	// 锁定计时器     我们通常在此P上运行时访问计时器，但调度程序也可以从其他P上执行此操作
+	//
+	// 使用当前 P 操作 timer 定时器任务时的 锁
 	timersLock mutex
 
 	// Actions to take at some time. This is used to implement the
 	// standard library's time package.
 	// Must hold timersLock to access.
+	//
+	//	有时需要采取的行动。 这用于实现标准库的时间包。
+	//	必须持有timersLock才能访问。
 	timers []*timer
 
 	// Number of timers in P's heap.
 	// Modified using atomic instructions.
+	//
+	// 记录当前 P 的 timer 堆上的 timer 个数
+	// 原子操作
 	numTimers uint32
 
 	// Number of timerModifiedEarlier timers on P's heap.
 	// This should only be modified while holding timersLock,
 	// or while the timer status is in a transient state
 	// such as timerModifying.
+	//
+	//
+	// P 的 timer 堆上的 状态为: `timerModifiedEarlier timer数量
+	//  仅应在保持 timersLock 或 计时器状态为 【过渡状态】（例如timerModifying）时进行修改
 	adjustTimers uint32
 
 	// Number of timerDeleted timers in P's heap.
 	// Modified using atomic instructions.
+	//
+	// 当前 P 的 timer 堆中  状态为 【可被删除】 的 timer的个数
+	// 原子操作
 	deletedTimers uint32
 
 	// Race context used while executing timer functions.

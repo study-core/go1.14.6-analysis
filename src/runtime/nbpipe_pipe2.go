@@ -13,10 +13,10 @@ func nonblockingPipe() (r, w int32, errno int32) {
 		if errno != 0 {
 			return -1, -1, errno
 		}
-		closeonexec(r)
-		setNonblock(r)
-		closeonexec(w)
-		setNonblock(w)
+		closeonexec(r)  // 汇编实现
+		setNonblock(r)	// 汇编实现
+		closeonexec(w)	// 汇编实现
+		setNonblock(w)	// 汇编实现
 	}
 	return r, w, errno
 }

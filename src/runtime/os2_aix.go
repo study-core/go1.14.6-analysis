@@ -399,7 +399,7 @@ func exit(code int32) {
 	exit1(code)
 }
 
-func write2(fd, p uintptr, n int32) int32
+func write2(fd, p uintptr, n int32) int32   // 汇编实现:  TEXT runtime·write2(SB)
 
 //go:nosplit
 func write1(fd uintptr, p unsafe.Pointer, n int32) int32 {

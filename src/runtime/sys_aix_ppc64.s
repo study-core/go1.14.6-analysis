@@ -258,6 +258,7 @@ TEXT runtime·exit1(SB),NOSPLIT,$0-4
 	CSYSCALL()
 	RET
 
+// runtime.write2() 的汇编实现
 // Runs on OS stack, called from runtime·write1.
 TEXT runtime·write2(SB),NOSPLIT,$0-28
 	MOVD	fd+0(FP), R3

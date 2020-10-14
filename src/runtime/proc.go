@@ -289,7 +289,7 @@ func goschedguarded() {
 // Reasons should be unique and descriptive.
 // Do not re-use reasons, add new ones.
 //
-//
+// todo 将当前 G 进行休眠
 //
 // 将当前goroutine置于【等待状态】，并且调用 unlockf 函数。
 // 如果 `unlockf()` 返回false，则继续执行goroutine。
@@ -331,6 +331,8 @@ func goparkunlock(lock *mutex, reason waitReason, traceEv byte, traceskip int) {
 	gopark(parkunlock_c, unsafe.Pointer(lock), reason, traceEv, traceskip)
 }
 
+
+// todo 将休眠的G 唤醒
 func goready(gp *g, traceskip int) {
 	systemstack(func() {
 		ready(gp, traceskip, true)
