@@ -466,7 +466,7 @@ func mallocinit() {
 		}
 	}
 
-	// Initialize the heap.
+	// Initialize the heap.     todo 初始化 全局的 mheap  (go 程序启动时, 先申请一大块 内存, 这个动作就是在这里了)
 	mheap_.init()
 	_g_ := getg()
 	_g_.m.mcache = allocmcache()

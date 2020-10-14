@@ -541,6 +541,12 @@ type g struct {
 type m struct {  // todo M 里面 有 P 和 G
 
 	// 用于调度的特殊g, `调度` 和 `执行系统调用` 时会切换到这个g 【系统G】
+	//
+	// 每个M启动都有一个叫 g0 的系统堆栈，
+	// 		runtime通常使用systemstack、mcall或asmcgocall临时切换到系统堆栈，以执行必须不被抢占的任务、不得增加用户堆栈的任务或切换用户goroutines。
+	// 		在系统堆栈上运行的代码 【隐式不可抢占】，【垃圾收集器不扫描系统堆栈】。
+	// 		在系统堆栈上运行时，不会使用当前用户堆栈执行。
+	//
 	g0      *g     // goroutine with scheduling stack
 	morebuf gobuf  // gobuf arg to morestack
 	divmod  uint32 // div/mod denominator for arm - known to liblink

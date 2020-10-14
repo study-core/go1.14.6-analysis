@@ -110,7 +110,7 @@ var runtimeInitTime int64
 var initSigmask sigset
 
 
-// TODO main 函数的主入口
+// TODO 提供给 G 调用的 main 函数    (参考 runtime.schedinit() )
 //
 //
 // The main goroutine.
@@ -547,6 +547,16 @@ func cpuinit() {
 	arm64HasATOMICS = cpu.ARM64.HasATOMICS
 }
 
+// todo 这个才是经过 汇编引导之后，整个go运行起来的核心所在啊   (引导程序)
+//
+//	 调用 osinit
+//	 调用 schedinit
+//	 创建一个新的 G并加入 G的全局 queue中
+//	 调用 当前G的 mstart()
+//
+//  一个新的G 会去调用 `runtime.main()` 而当前函数就是创建G的各种初始化
+//
+//
 // The bootstrap sequence is:
 //
 //	call osinit
@@ -558,18 +568,27 @@ func cpuinit() {
 func schedinit() {
 	// raceinit must be the first call to race detector.
 	// In particular, it must be done before mallocinit below calls racemapshadow.
+
+	// 调用 raceinit 必须是 首次对 race 检测器的调用，特别是：必须在 调用 mallocinit 函数之前，在 racemapshadow() 函数之后调用
+
 	_g_ := getg()
 	if raceenabled {
 		_g_.racectx, raceprocctx0 = raceinit()
 	}
 
-	sched.maxmcount = 10000
+	sched.maxmcount = 10000  // 最大的系统线程数量限制，参考 runtime/debug.SetmaxThreads (这部分在G M P 中有讲)
 
 	tracebackinit()
 	moduledataverify()
+
+	// 栈初始化
 	stackinit()
+
+	// 内存分配初始化
 	mallocinit()
 	fastrandinit() // must run before mcommoninit
+
+	// 调度器初始化
 	mcommoninit(_g_.m)
 	cpuinit()       // must run before alginit
 	alginit()       // maps must not be used before this call
@@ -580,16 +599,25 @@ func schedinit() {
 	msigsave(_g_.m)
 	initSigmask = _g_.m.sigmask
 
+	// 处理命令行参数
 	goargs()
+
+	// 处理环境变量
 	goenvs()
 	parsedebugvars()
+
+	// 垃圾回收器 初始化
 	gcinit()
 
 	sched.lastpoll = uint64(nanotime())
+
+	// 使用CPU的 核数 和 GOMAXPROCS 调试相关的环境变量设置
 	procs := ncpu
 	if n, ok := atoi32(gogetenv("GOMAXPROCS")); ok && n > 0 {
 		procs = n
 	}
+
+	// 调整P数量
 	if procresize(procs) != nil {
 		throw("unknown runnable goroutine during bootstrap")
 	}

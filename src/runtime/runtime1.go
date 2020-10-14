@@ -57,6 +57,10 @@ func argv_index(argv **byte, i int32) *byte {
 	return *(**byte)(add(unsafe.Pointer(argv), uintptr(i)*sys.PtrSize))
 }
 
+
+// 由汇编 代码执行调用过来
+//
+// go 程序启动时的  【命令行参数整理】
 func args(c int32, v **byte) {
 	argc = c
 	argv = v

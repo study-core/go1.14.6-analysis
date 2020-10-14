@@ -16,6 +16,11 @@ TEXT _rt0_amd64(SB),NOSPLIT,$-8
 	LEAQ	8(SP), SI	// argv
 	JMP	runtime·rt0_go(SB)
 
+// todo main 入口函数的 汇编实现
+//
+// main 是使用外部链接时大多数amd64系统的通用启动代码。 C启动代码将通过通常的 C ABI寄存器DI 和SI 中的argc和argv调用符号 "main".
+//
+//
 // main is common startup code for most amd64 systems when using
 // external linking. The C startup code will call the symbol "main"
 // passing argc and argv in the usual C ABI registers DI and SI.

@@ -69,6 +69,7 @@ func futexwakeup(addr *uint32, cnt uint32) {
 	*(*int32)(unsafe.Pointer(uintptr(0x1006))) = 0x1006
 }
 
+// 获取 cpu 内核数  (cpu core number)
 func getproccount() int32 {
 	// This buffer is huge (8 kB) but we are on the system stack
 	// and there should be plenty of space (64 kB).
@@ -294,6 +295,7 @@ func getHugePageSize() uintptr {
 	return uintptr(v)
 }
 
+// linux 平台的 go程序启动时的  系统环境初始化 函数  (由 汇编代码调用 进来)
 func osinit() {
 	ncpu = getproccount()
 	physHugePageSize = getHugePageSize()
