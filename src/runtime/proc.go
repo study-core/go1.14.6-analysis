@@ -2788,6 +2788,8 @@ func dropg() {
 	setGNoWB(&_g_.m.curg, nil)
 }
 
+// TODO 当前 P 检查Timer 堆中的 Timer
+//
 // checkTimers runs any timers for the P that are ready.
 // If now is not 0 it is the current time.
 // It returns the current time or 0 if it is not known,
@@ -2796,6 +2798,17 @@ func dropg() {
 // If the time when the next timer should run is not 0,
 // it is always larger than the returned time.
 // We pass now in and out to avoid extra calls of nanotime.
+//
+//
+// `checkTimers()`  为已运行的P运行任何计时器 
+//					如果现在不为0，则为当前时间
+//
+//					它返回当前时间，如果未知，则返回0，如果不知道下一个定时器应运行的时间，则返回0；
+// 					如果不存在下一个定时器，则返回0，并报告是否运行了任何定时器
+//					如果下一个计时器应运行的时间不为0，则始终大于返回的时间 
+//					我们现在传入和传出，以避免额外调用nanotime 
+//
+//
 //go:yeswritebarrierrec
 func checkTimers(pp *p, now int64) (rnow, pollUntil int64, ran bool) {
 	// If there are no timers to adjust, and the first timer on
@@ -4407,7 +4420,8 @@ func (pp *p) init(id int32) {
 		}
 	}
 }
-
+// todo 释放P的资源   销毁P   (状态： Pdead)
+//
 // destroy releases all of the resources associated with pp and
 // transitions it to status _Pdead.
 //

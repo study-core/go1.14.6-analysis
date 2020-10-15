@@ -33,7 +33,7 @@ type timer struct {
 	period int64			// 当前定时器周期触发间隔 (Ticker 中使用到) （对于Timer来说， 此值恒为0）
 	f      func(interface{}, uintptr)		// 定时器触发时执行函数 f
 	arg    interface{}						// 定时器触发时执行函数 f 的第一个参数
-	seq    uintptr							// 定时器触发时执行函数 f 的第二个参数  (该参数只在网络收发场景下使用)  （Timer并不使用该参数）
+	seq    uintptr							// 定时器触发时执行函数 f 的第二个参数  (该参数只在网络收发场景下使用)  （Timer并不使用该参数）  todo 目前这个参数 Timer 和 Ticker 都没用到
 
 	// What to set the when field to in timerModifiedXX status.  将when字段设置为timerModifiedXX状态的内容
 	//
@@ -203,9 +203,11 @@ func timeSleep(ns int64) {		// time.Sleep() 的真正实现
 	// 设置 这个 timer 的 定时 回调函数
 	t.f = goroutineReady   	// 就是简单的 唤醒当前 G
 	t.arg = gp				// 回调 func 的第一参数就是 当前 G
-	t.nextwhen = nanotime() + ns	// 设置 定时时间
+	t.nextwhen = nanotime() + ns	// 设置 定时时间      todo time.Sleep() 是将时间 设置到  nextwhen字段的.  不是 when 字段
 
 	// 将当前 G 进行休眠
+	//
+	//    todo 最终由  resetForSleep() 取 上面设置的  nextwhen 去赋值给 when， 然后 定时到 when 去调用回调函数  goroutineReady()  最终调用 goready() 重新唤醒 G
 	gopark(resetForSleep, unsafe.Pointer(t), waitReasonSleep, traceEvGoSleep, 1)
 }
 
@@ -219,7 +221,7 @@ func timeSleep(ns int64) {		// time.Sleep() 的真正实现
 //						我们无法在timeSleep本身中调用resettimer，因为如果这是短暂的睡眠，并且有许多goroutine，则P可以在暂存goroutine之前结束运行定时器功能 `goroutineReady()`
 func resetForSleep(gp *g, ut unsafe.Pointer) bool {
 	t := (*timer)(ut)
-	resettimer(t, t.nextwhen)
+	resettimer(t, t.nextwhen)   // 重新被 唤醒 G 时 (time.Sleep()后被唤醒) 将之前的 nextwhen 传进去
 	return true
 }
 
@@ -505,6 +507,8 @@ func dodeltimer0(pp *p) {
 // modtimer modifies an existing timer.
 // This is called by the netpoll code.
 func modtimer(t *timer, when, period int64, f func(interface{}, uintptr), arg interface{}, seq uintptr) {
+
+	// when 为修改 定时器的 新时间值
 	if when < 0 {
 		when = maxWhen
 	}
@@ -609,7 +613,7 @@ loop:
 	// 只有 经历过 【无状态】 || 【已经被删除】 才能进到这里
 	if wasRemoved {
 
-		// 重新设置  定时时间点
+		// todo 重新设置  定时时间点
 		t.when = when
 
 		// 获取当前 G 的 P
@@ -624,7 +628,7 @@ loop:
 		wakeNetPoller(when)	// todo 唤醒 网络轮询器 执行定时器
 
 
-	// 否则, 在其他状态下的 重置定时时间时.
+	// 否则, 在其他状态下的 重置定时时间时.    todo 一般是 因为 timer 在 其他 P 中, 我们不能直接操作 timer 只能是 修改了 timer 的 状态值, 由 当前 P 自己去操作 Timer
 	} else {
 
 
@@ -639,12 +643,12 @@ loop:
 		// 计时器位于 其他 P 的堆中，因此我们无法更改when字段.
 		// 如果这样做，其他P的堆将混乱.
 		// 因此，我们将新的when值放在nextwhen字段中，让另一个P在准备使用堆时设置when字段
-		t.nextwhen = when
+		t.nextwhen = when    // todo 这或许就是 t的 nextwhen 字段存在的意义
 
-		// 设置 修改时间状态为 【更早】 或者 【更晚】
-		newStatus := uint32(timerModifiedLater)
+		// todo 设置 修改时间状态为 【更早】 或者 【更晚】
+		newStatus := uint32(timerModifiedLater)		// 只有在这里一个地方 赋值为 【过晚】
 		if when < t.when {
-			newStatus = timerModifiedEarlier
+			newStatus = timerModifiedEarlier    	// 只有在这里一个地方 赋值为 【过早】
 		}
 
 
@@ -682,6 +686,9 @@ loop:
 
 
 // todo 重置timer时间
+//
+//      when 为 新设置的 时间
+//
 // resettimer resets the time when a timer should fire.
 // If used for an inactive timer, the timer will become active.
 // This should be called instead of addtimer if the timer value has been,
@@ -902,12 +909,26 @@ func nobarrierWakeTime(pp *p) int64 {
 	}
 }
 
+
+// todo 尝试着 运行 Timer 堆中第一个 Timer
+//
 // runtimer examines the first timer in timers. If it is ready based on now,
 // it runs the timer and removes or updates it.
 // Returns 0 if it ran a timer, -1 if there are no more timers, or the time
 // when the first timer should run.
 // The caller must have locked the timers for pp.
 // If a timer is run, this will temporarily unlock the timers.
+//
+//
+// `runtimer()`  检查计时器中的第一个计时器
+// 				如果基于现在已准备就绪，它将运行计时器并 删除 或 更新 它
+//
+//				如果运行计时器，则返回0；如果没有计时器，则返回-1；或者应该运行第一个计时器的时间
+//
+//				调用者必须锁定pp的计时器
+//				如果运行计时器，则将暂时解锁计时器
+//
+//
 //go:systemstack
 func runtimer(pp *p, now int64) int64 {
 	for {
@@ -926,7 +947,7 @@ func runtimer(pp *p, now int64) int64 {
 				continue
 			}
 			// Note that runOneTimer may temporarily unlock
-			// pp.timersLock.
+			// pp.timersLock.   请注意，runOneTimer 可能会暂时解锁 pp.timersLock
 			runOneTimer(pp, t, now)
 			return 0
 
@@ -977,6 +998,14 @@ func runtimer(pp *p, now int64) int64 {
 // runOneTimer runs a single timer.
 // The caller must have locked the timers for pp.
 // This will temporarily unlock the timers while running the timer function.
+//
+//
+// `runOneTimer()` 运行一个计时器
+//
+//  调用者必须锁定pp的计时器
+//  这将在运行时间功能时 临时 解锁 计时器
+//
+//
 //go:systemstack
 func runOneTimer(pp *p, t *timer, now int64) {
 	if raceenabled {
@@ -991,18 +1020,25 @@ func runOneTimer(pp *p, t *timer, now int64) {
 	arg := t.arg
 	seq := t.seq
 
+
+	// todo timer 执行的是 Ticker 定时器
 	if t.period > 0 {
-		// Leave in heap but adjust next time to fire.
+		// Leave in heap but adjust next time to fire.  留在堆中，但下次调整触发时间。
 		delta := t.when - now
-		t.when += t.period * (1 + -delta/t.period)
-		siftdownTimer(pp.timers, 0)
+		t.when += t.period * (1 + -delta/t.period)			// 更新下次 触发时间
+		siftdownTimer(pp.timers, 0)						// 调整堆
 		if !atomic.Cas(&t.status, timerRunning, timerWaiting) {
 			badTimer()
 		}
+
+		// 设置P的 timer0When 字段
 		updateTimer0When(pp)
+
+
+	// todo timer 执行的是 Timer 定时器
 	} else {
 		// Remove from heap.
-		dodeltimer0(pp)
+		dodeltimer0(pp) 		// 从堆中 移除 timer
 		if !atomic.Cas(&t.status, timerRunning, timerNoStatus) {
 			badTimer()
 		}
@@ -1019,6 +1055,8 @@ func runOneTimer(pp *p, t *timer, now int64) {
 
 	unlock(&pp.timersLock)
 
+
+	// todo 执行 定时器 回调func
 	f(arg, seq)
 
 	lock(&pp.timersLock)
@@ -1140,6 +1178,11 @@ func verifyTimerHeap(pp *p) {
 
 // updateTimer0When sets the P's timer0When field.
 // The caller must have locked the timers for pp.
+//
+//
+// `updateTimer0When()` 设置P的 timer0When 字段
+//
+//						调用者必须锁定pp的计时器
 func updateTimer0When(pp *p) {
 	if len(pp.timers) == 0 {
 		atomic.Store64(&pp.timer0When, 0)

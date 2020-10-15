@@ -15,6 +15,10 @@ type Ticker struct {
 	r runtimeTimer
 }
 
+// todo 实例化 Ticker
+//
+//     做法 基本和 Timer 一致
+//
 // NewTicker returns a new Ticker containing a channel that will send the
 // time with a period specified by the duration argument.
 // It adjusts the intervals or drops ticks to make up for slow receivers.
@@ -31,12 +35,14 @@ func NewTicker(d Duration) *Ticker {
 	t := &Ticker{
 		C: c,
 		r: runtimeTimer{
-			when:   when(d),
-			period: int64(d),
+			when:   when(d),	// 下一个定时时间点
+			period: int64(d),  	// 周期 间隔
 			f:      sendTime,
 			arg:    c,
 		},
 	}
+
+	// 启动 runtimeTimer
 	startTimer(&t.r)
 	return t
 }
@@ -48,6 +54,8 @@ func (t *Ticker) Stop() {
 	stopTimer(&t.r)
 }
 
+// todo 对 NewTicker() 的封装
+//
 // Tick is a convenience wrapper for NewTicker providing access to the ticking
 // channel only. While Tick is useful for clients that have no need to shut down
 // the Ticker, be aware that without a way to shut it down the underlying
