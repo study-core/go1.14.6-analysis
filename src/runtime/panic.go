@@ -629,6 +629,8 @@ func Goexit() {
 	gp._panic = (*_panic)(noescape(unsafe.Pointer(&p)))
 
 	addOneOpenDeferFrame(gp, getcallerpc(), unsafe.Pointer(getcallersp()))
+
+	// todo 在退出当前 G 之前, 将 defer 语句全部执行完
 	for {
 		d := gp._defer
 		if d == nil {

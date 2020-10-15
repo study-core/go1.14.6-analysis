@@ -76,6 +76,8 @@ type InternalBenchmark struct {
 	F    func(b *B)
 }
 
+// todo testing.B 结构的实现
+//
 // B is a type passed to Benchmark functions to manage benchmark
 // timing and to specify the number of iterations to run.
 //
@@ -90,6 +92,8 @@ type InternalBenchmark struct {
 // are always printed, so as not to hide output whose existence may be
 // affecting benchmark results.
 type B struct {
+
+	// 继承了 testing.common
 	common
 	importPath       string // import path of the package containing the benchmark
 	context          *benchContext
