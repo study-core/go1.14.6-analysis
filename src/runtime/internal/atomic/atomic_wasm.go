@@ -5,7 +5,9 @@
 // TODO(neelance): implement with actual atomic operations as soon as threads are available
 // See https://github.com/WebAssembly/design/issues/1073
 
-// Export some functions via linkname to assembly in sync/atomic.
+// 不明白 为什么 会有 两套 atomic 方法  一套在 sync/atomic/doc.go 中
+
+// Export some functions via linkname to assembly in sync/atomic.    通过 链接名 将某些功能导出到 sync/atomic 模块
 //go:linkname Load
 //go:linkname Loadp
 //go:linkname Load64

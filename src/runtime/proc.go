@@ -339,6 +339,10 @@ func goready(gp *g, traceskip int) {
 	})
 }
 
+// todo 分配 sudog
+//
+//     发生在 g 被放到 wait队列的 那一刻
+//
 //go:nosplit
 func acquireSudog() *sudog {
 	// Delicate dance: the semaphore implementation calls
@@ -377,6 +381,9 @@ func acquireSudog() *sudog {
 	return s
 }
 
+
+// todo 释放  sudog
+//
 //go:nosplit
 func releaseSudog(s *sudog) {
 	if s.elem != nil {

@@ -513,9 +513,16 @@ func (root *semaRoot) rotateRight(y *sudog) {
 // notifyList is a ticket-based notification list used to implement sync.Cond.
 //
 // It must be kept in sync with the sync package.
+//
+//
+// notifyList 是基于 `票证` 的通知列表，用于实现 sync.Cond.go 中的 notifyList 字段
+//
+// todo 结构 必须要和 runtime.go 中的 notifyList 一致
 type notifyList struct {
 	// wait is the ticket number of the next waiter. It is atomically
 	// incremented outside the lock.
+	//
+	// wait是下一个 等待者 (被阻塞的G) 的票号。 它在锁之外以原子方式递增。   (票号从 0 开始)
 	wait uint32
 
 	// notify is the ticket number of the next waiter to be notified. It can
@@ -525,9 +532,16 @@ type notifyList struct {
 	// handled as long as their "unwrapped" difference is bounded by 2^31.
 	// For this not to be the case, we'd need to have 2^31+ goroutines
 	// blocked on the same condvar, which is currently not possible.
+	//
+	//
+	// notify  是下一个要通知的 等待者 (被阻塞的G)的票号。
+	// 			可以在锁之外读取它，但是只能在 持有锁的情况下写入 (写互斥)
+	//
+	//	等待   和   通知   都可以绕回，只要“展开”的差异以  2^31   为界，此类情况将得到正确处理。
+	//	要避免这种情况，我们需要在同一个  condvar (该sync.Cond) 上阻塞 2^31+ 个 G，这目前是不可能的。
 	notify uint32
 
-	// List of parked waiters.
+	// List of parked waiters.     下面的 等待者 (被阻塞的G) 队列的 收尾指针
 	lock mutex
 	head *sudog
 	tail *sudog
@@ -535,20 +549,36 @@ type notifyList struct {
 
 // less checks if a < b, considering a & b running counts that may overflow the
 // 32-bit range, and that their "unwrapped" difference is always less than 2^31.
+//
+// `less()` 检查是否满足: a < b.  考虑 `a & b`  的运行计数可能溢出32位范围，并且检查它们的 “未包装” 差值始终小于 2 ^ 31
 func less(a, b uint32) bool {
 	return int32(a-b) < 0
 }
 
+// todo runtime.go 的 sunc.runtime_notifyListAdd() 的真正实现
+//
+// sync.Cond 的方法, 将当前G 加入等待队列
+//
 // notifyListAdd adds the caller to a notify list such that it can receive
 // notifications. The caller must eventually call notifyListWait to wait for
 // such a notification, passing the returned ticket number.
+//
+// `notifyListAdd()`  将  调用方G 添加到通知列表中，以便它可以接收通知。 调用者G 必须最终调用 notifyListWait 来等待此类通知，并传递返回  当前被阻塞的G 的票号,
+// 						（票号从0开始） +1表示 下一个人的票号, 而不是自己的票号哦
+//
 //go:linkname notifyListAdd sync.runtime_notifyListAdd
 func notifyListAdd(l *notifyList) uint32 {
 	// This may be called concurrently, for example, when called from
 	// sync.Cond.Wait while holding a RWMutex in read mode.
-	return atomic.Xadd(&l.wait, 1) - 1
+	//
+	// 这可以被同时调用，例如，当从sync.Cond.Wait 中调用时，同时将RWMutex保持在读取模式。
+	return atomic.Xadd(&l.wait, 1) - 1   // 生成下一个人的 票号, 并返回自己的 票号
 }
 
+// todo runtime.go 的 sync.runtime_notifyListWait() 的真正实现
+//
+// sync.Cond 的方法, 根据票号t, 将当前G挂起,放入等待队列中
+//
 // notifyListWait waits for a notification. If one has been sent since
 // notifyListAdd was called, it returns immediately. Otherwise, it blocks.
 //go:linkname notifyListWait sync.runtime_notifyListWait
@@ -556,13 +586,19 @@ func notifyListWait(l *notifyList, t uint32) {
 	lock(&l.lock)
 
 	// Return right away if this ticket has already been notified.
+	//
+	// 如果已通知此票，请立即返回
+	//
+	// (如果当前 票号 < 下一个要被通知的 票号)  说明, 自已已经被通知过了
 	if less(t, l.notify) {
 		unlock(&l.lock)
 		return
 	}
 
-	// Enqueue itself.
-	s := acquireSudog()
+	// Enqueue itself.   自己入队
+
+
+	s := acquireSudog()  // 分配 sudog
 	s.g = getg()
 	s.ticket = t
 	s.releasetime = 0
@@ -571,43 +607,65 @@ func notifyListWait(l *notifyList, t uint32) {
 		t0 = cputicks()
 		s.releasetime = -1
 	}
+
+	// 不是很懂 ...
 	if l.tail == nil {
 		l.head = s
 	} else {
 		l.tail.next = s
 	}
 	l.tail = s
+
+	// 将 当前goroutine置于 【等待状态】 并解锁 lock
+	// 通过调用 goready（gp），可以使goroutine再次可运行
 	goparkunlock(&l.lock, waitReasonSyncCondWait, traceEvGoBlockCond, 3)
 	if t0 != 0 {
 		blockevent(s.releasetime-t0, 2)
 	}
+
+	// 释放 sudog
 	releaseSudog(s)
 }
 
+
+// todo runtime.go 的 sync.runtime_notifyListNotifyAll() 的真正实现
+//
+// sync.Cond 的方法, 将当前 wait 队列中所有 被阻塞的G 唤醒
+//
 // notifyListNotifyAll notifies all entries in the list.
 //go:linkname notifyListNotifyAll sync.runtime_notifyListNotifyAll
 func notifyListNotifyAll(l *notifyList) {
 	// Fast-path: if there are no new waiters since the last notification
 	// we don't need to acquire the lock.
+	//
+	//快速路径：如果自上次通知以来没有新的 被挂起的G，我们根本不需要获取锁
+	//
+	//  因为 票号是从 0开始的, 我们从边界 0 开始分析, wait中记录的是下一个即将被分配的票号, 而 notify 中记录的是 下一个可以被唤醒的G 的票号,
+	//	如果 wait > notify 说明存在 被阻塞的G,   如果 wait  == notify 说明 没有被挂起的G
 	if atomic.Load(&l.wait) == atomic.Load(&l.notify) {
 		return
 	}
 
 	// Pull the list out into a local variable, waiters will be readied
-	// outside the lock.
+	// outside the lock.    将 wait列表 拉出到 局部变量中，被阻塞的G 将在锁外准备就绪
 	lock(&l.lock)
-	s := l.head
-	l.head = nil
+	s := l.head      	// 拉出 队列头的 G
+	l.head = nil		// 清空 队列   (因为 取出来的  头 sudog 中有 next 引用的哦)
 	l.tail = nil
 
 	// Update the next ticket to be notified. We can set it to the current
 	// value of wait because any previous waiters are already in the list
 	// or will notice that they have already been notified when trying to
 	// add themselves to the list.
+	//
+	//
+	// 更新下一个要通知的 票号。 我们可以将其设置为当前，或者 在尝试将自己添加到列表时会注意到它们已经被通知。
+	//
+	//  之所以不清空, wait 和 notify 是因为， 不需要清空啊,  新来的就 取后面的票号, 需要被释放的 也是一个道理啊   (类似一个移动窗口 一直往后划)
 	atomic.Store(&l.notify, atomic.Load(&l.wait))
 	unlock(&l.lock)
 
-	// Go through the local list and ready all waiters.
+	// Go through the local list and ready all waiters.    逐个唤醒目前全部的 G
 	for s != nil {
 		next := s.next
 		s.next = nil
@@ -616,25 +674,37 @@ func notifyListNotifyAll(l *notifyList) {
 	}
 }
 
+
+// todo runtime.go 的 sync.runtime_notifyListNotifyOne() 的真正实现
+//
+// sync.Cond 的方法, 唤醒下一个需要被唤醒的G
+//
 // notifyListNotifyOne notifies one entry in the list.
 //go:linkname notifyListNotifyOne sync.runtime_notifyListNotifyOne
 func notifyListNotifyOne(l *notifyList) {
 	// Fast-path: if there are no new waiters since the last notification
 	// we don't need to acquire the lock at all.
+	//
+	//快速路径：如果自上次通知以来没有新的 被挂起的G，我们根本不需要获取锁
+	//
+	//  因为 票号是从 0开始的, 我们从边界 0 开始分析, wait中记录的是下一个即将被分配的票号, 而 notify 中记录的是 下一个可以被唤醒的G 的票号,
+	//	如果 wait > notify 说明存在 被阻塞的G,   如果 wait  == notify 说明 没有被挂起的G
 	if atomic.Load(&l.wait) == atomic.Load(&l.notify) {
 		return
 	}
 
 	lock(&l.lock)
 
-	// Re-check under the lock if we need to do anything.
+	// Re-check under the lock if we need to do anything.   如果需要执行任何操作，请在锁下重新检查
+	//
+	// 再次做一次  wait  和 notify 的比较判断
 	t := l.notify
 	if t == atomic.Load(&l.wait) {
 		unlock(&l.lock)
 		return
 	}
 
-	// Update the next notify ticket number.
+	// Update the next notify ticket number.   更新下一个 被唤醒的 票号   todo (从 第一个开始逐个往后唤醒G的)
 	atomic.Store(&l.notify, t+1)
 
 	// Try to find the g that needs to be notified.
@@ -650,7 +720,21 @@ func notifyListNotifyOne(l *notifyList) {
 	// be too long. This applies even when the g is missing:
 	// it hasn't yet gotten to sleep and has lost the race to
 	// the (few) other g's that we find on the list.
+	//
+	//
+	//	尝试找到需要通知的g
+	//		如果尚未进入 wait列表，但我们找不到它，但我们找不到它，但是一旦看到新的 票号，它就不会停放
+	//
+	// 此扫描看起来是线性的，但实际上总是很快停止
+	// 因为g的队列与取数字的队列分开，所以列表中可能会有较小的重新排序，但是我们希望我们要寻找的g在前面
+	//
+	// G 仅在失去竞争的情况下才在列表中位于 G的前面，因此迭代的时间不会太长。 即使 g丢失，这也适用：它尚未入睡，已经失去了 与 列表中其他 g的竞争
+	//
+	//
+	//  逐个将 wait 队列中的 G 遍历, 直到 拿到 当前票号对应的G,  唤醒该G
 	for p, s := (*sudog)(nil), l.head; s != nil; p, s = s, s.next {
+
+		// 逐个的和 当前需要被释放的 票号对比
 		if s.ticket == t {
 			n := s.next
 			if p != nil {
@@ -663,13 +747,17 @@ func notifyListNotifyOne(l *notifyList) {
 			}
 			unlock(&l.lock)
 			s.next = nil
-			readyWithTime(s, 4)
+			readyWithTime(s, 4)  // 唤醒该 G
 			return
 		}
 	}
 	unlock(&l.lock)
 }
 
+// todo runtime.go 的 sync.runtime_notifyListCheck() 的真正实现
+//
+// 用来检验 runtime.go 中的 notifyList 结构体 和 当前sema.go 的 notifyList结构体 是否 结构和对齐 一致
+//
 //go:linkname notifyListCheck sync.runtime_notifyListCheck
 func notifyListCheck(sz uintptr) {
 	if sz != unsafe.Sizeof(notifyList{}) {

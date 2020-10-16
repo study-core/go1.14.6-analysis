@@ -43,6 +43,8 @@ import (
 	"unsafe"
 )
 
+// 不明白 为什么 会有 两套 atomic 方法  一套在 runtime/internal/atomic/atomic_wasm.go 中
+
 // BUG(rsc): On x86-32, the 64-bit functions use instructions unavailable before the Pentium MMX.
 //
 // On non-Linux ARM, the 64-bit functions use instructions unavailable before the ARMv6k core.

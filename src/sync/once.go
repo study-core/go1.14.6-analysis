@@ -52,6 +52,7 @@ func (o *Once) Do(f func()) {
 	// This is why the slow path falls back to a mutex, and why
 	// the atomic.StoreUint32 must be delayed until after f returns.
 
+	// 只有状态没被修改时 才调用回调func
 	if atomic.LoadUint32(&o.done) == 0 {
 		// Outlined slow-path to allow inlining of the fast-path.
 		o.doSlow(f)
@@ -62,6 +63,7 @@ func (o *Once) doSlow(f func()) {
 	o.m.Lock()
 	defer o.m.Unlock()
 	if o.done == 0 {
+		// 先调用回调func, 再改状态
 		defer atomic.StoreUint32(&o.done, 1)
 		f()
 	}

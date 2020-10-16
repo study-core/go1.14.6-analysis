@@ -369,14 +369,21 @@ type gobuf struct {
 // sudogs are allocated from a special pool. Use acquireSudog and
 // releaseSudog to allocate and free them.
 //
-// sudog 代表在等待列表里的 g，比如向 channel 发送/接收内容时
+// todo 被阻塞的goroutine将会封装成sudog，加入到channel的等待队列中
 //
-// sudog 是必需的，因为 `g <--> 同步对象` 关系是多对多的.
-// 		一个 g 可以出现在许多等待列表上，因此一个g可能有许多sudog.
-// 		并且许多 g 可能正在等待同一个同步对象，因此一个同步对象可能有许多sudog
+//  todo 什么是 sudog
 //
-// sudog 是从一个特殊的池中进行分配的。用 acquireSudog 和 releaseSudog 来分配和释放 sudog
+// todo sudog 代表在 wait列表 里的 g，比如向 channel 发送/接收内容时
+//
+// sudog 是必需的，因为 `g <--> snyc.Obj` 关系是多对多的.
+
+// 		一个 g 可以出现在许多 wait列表 上，因此一个g可能有许多 sudog.
+//
+// 		并且许多 g 可能正在 等待 同一个 sunc.Obj，因此一个 sync.Obj 可能有许多 sudog
+//
+// todo sudog 是从一个特殊的池中进行分配的。用 acquireSudog 和 releaseSudog 来分配 和 释放 sudog
 type sudog struct {
+
 	// The following fields are protected by the hchan.lock of the
 	// channel this sudog is blocking on. shrinkstack depends on
 	// this for sudogs involved in channel ops.
@@ -405,6 +412,8 @@ type sudog struct {
 
 	acquiretime int64
 	releasetime int64
+
+	// 票号, 在 sync.Cond 中被使用的东西
 	ticket      uint32
 	parent      *sudog // semaRoot binary tree
 	waitlink    *sudog // g.waiting list or semaRoot
