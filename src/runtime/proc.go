@@ -685,6 +685,8 @@ func mcommoninit(mp *m) {
 	sched.mnext++
 	checkmcount()
 
+
+	// 给当前M 在求 随机函数时 需要的两个 seed 赋值
 	mp.fastrand[0] = uint32(int64Hash(uint64(mp.id), fastrandseed))
 	mp.fastrand[1] = uint32(int64Hash(uint64(cputicks()), ^fastrandseed))
 	if mp.fastrand[0]|mp.fastrand[1] == 0 {
@@ -5729,9 +5731,9 @@ func procPin() int {
 	mp.locks++		//  这里gc在开始之前，会获取当期那M，然后判断当前M上的几个参数，其中的一个参数是locks，这个只要大于0，便不会发生GC
 
 	// 这个locks会在调用pin的使用进行自增，以此来保证GC的不触发.
-	// todo 同时，有产生了一个问题，pin的调用能保证GC的不触发，那么在大量pin的调用下，极端情况下，GC是不是不会执行了呢？
+	// todo 同时，有产生了一个问题，pin 的调用能保证GC的不触发，那么在大量pin的调用下，极端情况下，GC是不是不会执行了呢？
 
-	return int(mp.p.ptr().id)
+	return int(mp.p.ptr().id)  // 返回 PID
 }
 
 // todo 取消 固定 当前 M 和 G

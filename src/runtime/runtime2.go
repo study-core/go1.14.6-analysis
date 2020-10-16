@@ -597,6 +597,8 @@ type m struct {  // todo M 里面 有 P 和 G
 	printlock     int8
 	incgo         bool   // m is executing a cgo call
 	freeWait      uint32 // if == 0, safe to free g0 and delete m (atomic)
+
+	// 用来 实现随机函数 存放的两个 seed
 	fastrand      [2]uint32
 	needextram    bool
 	traceback     uint8

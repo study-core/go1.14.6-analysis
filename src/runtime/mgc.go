@@ -2628,6 +2628,10 @@ func gcResetMarkState() {
 
 var poolcleanup func()
 
+// 注册 清除 sync.pool 实例回调函数 的方法  (主要给 GC 用)
+//
+// pool.go 中的 sync.runtime_registerPoolCleanup() 的实现
+//
 //go:linkname sync_runtime_registerPoolCleanup sync.runtime_registerPoolCleanup
 func sync_runtime_registerPoolCleanup(f func()) {
 	poolcleanup = f

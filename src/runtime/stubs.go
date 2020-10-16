@@ -127,8 +127,11 @@ func reflect_memmove(to, from unsafe.Pointer, n uintptr) {
 // exported value for testing
 var hashLoad = float32(loadFactorNum) / float32(loadFactorDen)
 
+// todo 随机函数的底层实现
 //go:nosplit
 func fastrand() uint32 {
+
+	// 获取当前G 对应的 M
 	mp := getg().m
 	// Implement xorshift64+: 2 32-bit xorshift sequences added together.
 	// Shift triplet [17,7,16] was calculated as indicated in Marsaglia's

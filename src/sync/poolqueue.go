@@ -44,6 +44,7 @@ type poolDequeue struct {
 	vals []eface
 }
 
+// 给 sync.pool 使用的  eface 定义
 type eface struct {
 	typ, val unsafe.Pointer
 }
