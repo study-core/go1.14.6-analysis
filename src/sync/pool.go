@@ -362,11 +362,14 @@ func (p *Pool) pinSlow() (*poolLocal, int) {
 	if p.local == nil {
 		allPools = append(allPools, p)     // todo 只有首次实例化的 pool 才会被放置到  全局的pool 池总, 首次实例化的 pool的 local 数组就是 nil
 	}
+
+	// todo 如果 GOMAXPROCS 在 GC 之间更改，我们将重新分配该数组，并丢失旧的数组
+	//
 	// If GOMAXPROCS changes between GCs, we re-allocate the array and lose the old one.
 	//
 	// 根据 P 数量创建 slice，如果 GOMAXPROCS 在 GC 间发生变化
 	// 我们重新分配此数组并丢弃旧的
-	size := runtime.GOMAXPROCS(0)   // 可以知道 local数组中可以 放置的 obj 的个数 以  目前系统做多可以有几个 P 而定
+	size := runtime.GOMAXPROCS(0)   // 可以知道 local数组中可以 放置的 obj 的个数 以  目前系统做多可以有几个 P 而定 todo (但是 为什么 修改为 0 ？？？？)
 	local := make([]poolLocal, size)
 
 	// 将底层数组起始指针保存到 p.local，并设置 p.localSize
