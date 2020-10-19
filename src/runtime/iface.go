@@ -314,6 +314,11 @@ var (
 // The convXXX functions succeed on a nil input, whereas the assertXXX
 // functions fail on a nil input.
 
+// 将不同类型 赋值给 interface{} 类型时的 转换方法
+//
+//  如:  var in interface{} = uint(78)
+//
+//
 func convT2E(t *_type, elem unsafe.Pointer) (e eface) {
 	if raceenabled {
 		raceReadObjectPC(t, elem, getcallerpc(), funcPC(convT2E))
@@ -321,10 +326,10 @@ func convT2E(t *_type, elem unsafe.Pointer) (e eface) {
 	if msanenabled {
 		msanread(elem, t.size)
 	}
-	x := mallocgc(t.size, t, true)
-	// TODO: We allocate a zeroed object only to overwrite it with actual data.
-	// Figure out how to avoid zeroing. Also below in convT2Eslice, convT2I, convT2Islice.
-	typedmemmove(t, x, elem)
+	x := mallocgc(t.size, t, true)  //	分配一个 size byte 的对象  todo (分配内存的 入口)
+	// TODO: We allocate a zeroed object only to overwrite it with actual data.      我们分配一个清零的对象只是为了用实际数据覆盖它
+	// Figure out how to avoid zeroing. Also below in convT2Eslice, convT2I, convT2Islice.      弄清楚如何避免归零. 也在下面的 convT2Eslice，convT2I，convT2Islice 中
+	typedmemmove(t, x, elem)  // todo 内存复制
 	e._type = t
 	e.data = x
 	return
@@ -395,6 +400,30 @@ func convT2Enoptr(t *_type, elem unsafe.Pointer) (e eface) {
 	return
 }
 
+// 将 不同类型 赋值给 被实现的接口类型时 的转换方法
+//
+// 如:
+//
+// 		type einter interface {
+// 				String() string
+//				Err() error
+// 		}
+//
+//		type estruct struct {}
+//
+//		func (e *estruct) String() string {
+// 			return "e"
+// 		}
+//
+//		func (e *estruct) Err() error {
+// 			return errors.New("e err")
+// 		}
+//
+//
+//		es := &estruct{}
+//
+//		var ee einter = es
+//
 func convT2I(tab *itab, elem unsafe.Pointer) (i iface) {
 	t := tab._type
 	if raceenabled {
@@ -403,8 +432,8 @@ func convT2I(tab *itab, elem unsafe.Pointer) (i iface) {
 	if msanenabled {
 		msanread(elem, t.size)
 	}
-	x := mallocgc(t.size, t, true)
-	typedmemmove(t, x, elem)
+	x := mallocgc(t.size, t, true)	// todo 分配内存
+	typedmemmove(t, x, elem)  					// todo 内存复制
 	i.tab = tab
 	i.data = x
 	return
@@ -425,6 +454,7 @@ func convT2Inoptr(tab *itab, elem unsafe.Pointer) (i iface) {
 	return
 }
 
+// 将
 func convI2I(inter *interfacetype, i iface) (r iface) {
 	tab := i.tab
 	if tab == nil {

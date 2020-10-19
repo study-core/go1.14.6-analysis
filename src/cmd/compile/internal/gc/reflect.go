@@ -1530,6 +1530,7 @@ func dumpsignats() {
 	}
 }
 
+// 遍历  itabs
 func dumptabs() {
 	// process itabs
 	for _, i := range itabs {

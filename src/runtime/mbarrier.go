@@ -152,6 +152,8 @@ import (
 // TODO: Perfect for go:nosplitrec since we can't have a safe point
 // anywhere in the bulk barrier or memmove.
 //
+// todo 内存复制 (很重要的一个方法)
+//
 //go:nosplit
 func typedmemmove(typ *_type, dst, src unsafe.Pointer) {
 	if dst == src {

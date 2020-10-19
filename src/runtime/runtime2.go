@@ -214,15 +214,26 @@ type funcval struct {
 
 /**
 iface  和 eface 分别是 interface 类型的两种定义
+
+Go语言中，每个变量都有唯一个【静态类型】，这个类型是编译阶段就可以确定的。有的变量可能除了静态类型之外，还会有【动态混合类型】.
+
+interface的“类型”和“数据值”是在“一起的”，而 reflect 的“类型”和“数据值”是分开的
+
+ todo interface源码(位于”Go SDK/src/runtime/runtime2.go“)中的 eface和 iface 会
+ todo	和 反射源码(位于”GO SDK/src/reflect/value.go“)中的emptyInterface和nonEmptyInterface保持数据同步！
  */
+
+// 非 interface{} 类型接口  (iface表示的是包含方法的interface)
 type iface struct {
-	tab  *itab
-	data unsafe.Pointer
+	tab  *itab				// 决定 类型的
+	data unsafe.Pointer		// 指向具体的数据的指针
 }
 
+// interface{} 类型接口  (不包含方法的interface)
 type eface struct {
-	_type *_type
-	data  unsafe.Pointer
+	// _type可以认为是Go语言中所有类型的公共描述，Go语言中几乎所有的数据结构都可以抽象成_type，是所有类型的表现，可以说是万能类型   todo (看 rtype)
+	_type *_type    		// 用于 指向赋值给接口的具体类型  (动态类型的具体类型)
+	data  unsafe.Pointer  	// 指向具体数据的指针
 }
 
 func efaceOf(ep *interface{}) *eface {
@@ -991,11 +1002,32 @@ type funcinl struct {
 // allocated in non-garbage-collected memory
 // Needs to be in sync with
 // ../cmd/compile/internal/gc/reflect.go:/^func.dumptabs.
+//
+//
+// 编译器已知的Itab布局
+// 在 非GC内存 中分配
+// 需要与
+// ../cmd/compile/internal/gc/reflect.go:/^func.dumptabs
+//
+//
 type itab struct {
-	inter *interfacetype
-	_type *_type
+
+	// todo  主要包含 两部分:
+	//
+	// 		一部分是  	确定唯一的包含方法的interface的具体结构类型
+	//		一部分是	指向具体方法集的指针
+
+	// inter 和 _type 共同决定了 interface的具体结构类型
+	inter *interfacetype			// 用于 指向 接口本身类型
+	_type *_type					// 用于 指向 实现了接口的 具体类型  (动态类型的具体类型)
+
+	// _type.hash 的拷贝, 用于 查询 和 类型判断
 	hash  uint32 // copy of _type.hash. Used for type switches.
+
+	// 做内存对齐用
 	_     [4]byte
+
+	// 指向 具体方法集的指针
 	fun   [1]uintptr // variable sized. fun[0]==0 means _type does not implement inter.
 }
 

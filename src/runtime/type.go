@@ -25,26 +25,45 @@ const (
 )
 
 
-/**
-//	需要与../cmd/link/internal/ld/decodesym.go:/^func.commonsize同步，
+//
+//	需要与../cmd/link/internal/ld/decodesym.go:/^func.commonsize 同步，
 //	 ../cmd/compile/internal/gc/reflect.go:/^func.dcommontype和
-//	 ../reflect/type.go:/^type.rtype。
-//	 ../internal/reflectlite/type.go:/^type.rtype。
- */
+//	 ../reflect/type.go:/^type.rtype
+//	 ../internal/reflectlite/type.go:/^type.rtype
+//
+//   查看以上几个 文件中的 内容自明
+//
 // Needs to be in sync with ../cmd/link/internal/ld/decodesym.go:/^func.commonsize,
 // ../cmd/compile/internal/gc/reflect.go:/^func.dcommontype and
 // ../reflect/type.go:/^type.rtype.
 // ../internal/reflectlite/type.go:/^type.rtype.
 type _type struct {
+
+	// 类型数据大小 ??
 	size       uintptr
+
+	// 包含所有指针 的 内存前缀的大小
 	ptrdata    uintptr // size of memory prefix holding all pointers
+
+	// 类型的哈希; 避免在哈希表中进行计算 (缓存用)
 	hash       uint32
+
+	// 额外的类型信息标志
 	tflag      tflag
+
+	// 将此类型的变量对齐
 	align      uint8
+
+	// 将此结构字段对齐
 	fieldAlign uint8
+
+	// C的枚举
 	kind       uint8
 	// function for comparing objects of this type
 	// (ptr to object A, ptr to object B) -> ==?
+	//
+	//
+	// 比较此类对象 的函数 (ptr 与 对象A，ptr 与 对象B) -> == ?
 	equal func(unsafe.Pointer, unsafe.Pointer) bool
 	// gcdata stores the GC type data for the garbage collector.
 	// If the KindGCProg bit is set in kind, gcdata is a GC program.
@@ -57,7 +76,11 @@ type _type struct {
 	// 类型信息: 在分配对象时会复制到bitmap区域, 使用1 bit表示一个指针大小的内存 (位于_type.gcdata)
 	//
 	gcdata    *byte
+
+	// 字符串形式
 	str       nameOff
+
+	// 指向此类型的指针的类型，可以为零
 	ptrToThis typeOff
 }
 
@@ -370,6 +393,9 @@ type imethod struct {
 	ityp typeOff
 }
 
+// 类似于_type，其作用就是interface的公共描述，类似的还有maptype、arraytype、chantype, ... 其都是各个结构的公共描述，可以理解为一种外在的表现信息
+//
+//  供 runtime 使用的  运行时 interface 类型
 type interfacetype struct {
 	typ     _type
 	pkgpath name

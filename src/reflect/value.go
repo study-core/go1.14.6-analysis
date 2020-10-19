@@ -12,7 +12,7 @@ import (
 
 const ptrSize = 4 << (^uintptr(0) >> 63) // unsafe.Sizeof(uintptr(0)) but an ideal const
 
-// Value is the reflection interface to a Go value.
+// Value is the reflection interface to a Go value.    值是Go值的反射接口
 //
 // Not all methods apply to all kinds of values. Restrictions,
 // if any, are noted in the documentation for each method.
@@ -35,10 +35,17 @@ const ptrSize = 4 << (^uintptr(0) >> 63) // unsafe.Sizeof(uintptr(0)) but an ide
 // they represent.
 type Value struct {
 	// typ holds the type of the value represented by a Value.
+	//
+	// typ 包含由值 表示的 值的类型
 	typ *rtype
 
 	// Pointer-valued data or, if flagIndir is set, pointer to data.
 	// Valid when either flagIndir is set or typ.pointers() is true.
+	//
+	//
+	// 指针值的数据；如果设置了 flagIndir，则为数据的指针。
+	// 在设置flagIndir或typ.pointers（）为true时有效
+	//
 	ptr unsafe.Pointer
 
 	// flag holds metadata about the value.
@@ -53,13 +60,42 @@ type Value struct {
 	// The remaining 23+ bits give a method number for method values.
 	// If flag.kind() != Func, code can assume that flagMethod is unset.
 	// If ifaceIndir(typ), code can assume that flagIndir is set.
-	flag
+	//
+	//
+	//
+	// `flag`保存有关该值的元数据
+	//
+	// 最低位是标志位：
+	//
+	//		-flagStickyRO：	通过未导出的未嵌入字段获取，因此为只读
+	//		-flagEmbedRO：	通过未导出的嵌入式字段获取，因此为只读
+	//		-flagIndir：	val保存指向数据的指针
+	//		-flagAddr：		v.CanAddr为true（表示flagIndir）
+	//		-flagMethod：	v是方法值
+	//
+	//	接下来的 5 bit 给出值的种类
+	//
+	//  重复 typ.Kind() ，方法值除外
+	//
+	// 其余的23+位给出方法值的方法编号
+	//
+	// 如果 flag.kind() != Func ，则代码可以假定未设置flagMethod
+	// 如果是 ifaceIndir(typ) ，则代码可以假定设置了flagIndir
+	//
+	//
+	//
+	flag   // todo  直接 继承了   flag
 
 	// A method value represents a curried method invocation
 	// like r.Read for some receiver r. The typ+val+flag bits describe
 	// the receiver r, but the flag's Kind bits say Func (methods are
 	// functions), and the top bits of the flag give the method number
 	// in r's type's method table.
+	//
+	//
+	// 方法值 代表 某些 接收者r 的咖喱方法调用，如 r.Read.
+	// "typ + val + flag" bit 描述了接收器r，但是 标志的Kind位表示Func (方法是函数)，
+	// 	并且标志的 高位给出了r 类型的方法表中的方法编号
 }
 
 type flag uintptr
@@ -177,23 +213,30 @@ func methodName() string {
 	return f.Name()
 }
 
+// todo interface源码(位于”Go SDK/src/runtime/runtime2.go“)中的 eface和 iface 会
+// todo	和 反射源码(位于”GO SDK/src/reflect/value.go“)中的emptyInterface和nonEmptyInterface保持数据同步！
+
 // emptyInterface is the header for an interface{} value.
+//
+// emptyInterface 是 interface{}值 的头     eface 的值
 type emptyInterface struct {
-	typ  *rtype
-	word unsafe.Pointer
+	typ  *rtype					// 动态类型
+	word unsafe.Pointer			// 指向具体的数据
 }
 
 // nonEmptyInterface is the header for an interface value with methods.
+//
+// nonEmptyInterface 是 带有方法的接口值 的头  非 interface{} 接口    iface 的值
 type nonEmptyInterface struct {
 	// see ../runtime/iface.go:/Itab
 	itab *struct {
-		ityp *rtype // static interface type
-		typ  *rtype // dynamic concrete type
-		hash uint32 // copy of typ.hash
-		_    [4]byte
-		fun  [100000]unsafe.Pointer // method table
+		ityp *rtype // static interface type     	静态类型
+		typ  *rtype // dynamic concrete type		动态类型
+		hash uint32 // copy of typ.hash				_type.hash 的拷贝
+		_    [4]byte								// 数据对齐用
+		fun  [100000]unsafe.Pointer // method table	方法集
 	}
-	word unsafe.Pointer
+	word unsafe.Pointer				// 指向 具体的数据
 }
 
 // mustBe panics if f's kind is not expected.

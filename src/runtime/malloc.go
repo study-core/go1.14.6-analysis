@@ -988,7 +988,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		}
 	}
 
-	// 增加当前G对应的M的lock计数, 防止这个G被抢占
+	// todo 增加当前G对应的M的lock计数, 防止这个G被抢占
 	//
 	// Set mp.mallocing to keep from being preempted by GC.
 	mp := acquirem()
@@ -1002,7 +1002,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
 	shouldhelpgc := false
 	dataSize := size
-	c := gomcache()  // 获取 运行当前 G 的 M 上的 P 的 mcache (用来先从上面 申请 内存 span)        因为M在拥有P后会把P的mcache设到M中, 这里返回的是getg().m.mcache
+	c := gomcache()  // 获取 运行当前 G 的 M 上的 P 的 mcache (用来先从上面 申请 内存 span)      因为M在拥有P后会把P的mcache设到M中, 这里返回的是getg().m.mcache
 	var x unsafe.Pointer
 	noscan := typ == nil || typ.ptrdata == 0    // 是否 不包含指针 的对象
 
