@@ -234,7 +234,7 @@ type nonEmptyInterface struct {
 		typ  *rtype // dynamic concrete type		动态类型
 		hash uint32 // copy of typ.hash				_type.hash 的拷贝
 		_    [4]byte								// 数据对齐用
-		fun  [100000]unsafe.Pointer // method table	方法集
+		fun  [100000]unsafe.Pointer // method table	方法集    10W 个 方法
 	}
 	word unsafe.Pointer				// 指向 具体的数据
 }
