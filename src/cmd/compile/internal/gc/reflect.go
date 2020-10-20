@@ -238,6 +238,12 @@ func hmap(t *types.Type) *types.Type {
 
 // hiter builds a type representing an Hiter structure for the given map type.
 // Make sure this stays in sync with runtime/map.go.
+//
+// map 的迭代器
+//
+// hiter 为给定的 Map 类型构建一个表示 hiter结构的类型
+//
+// 确保它与 runtime/map.go 保持同步
 func hiter(t *types.Type) *types.Type {
 	if t.MapType().Hiter != nil {
 		return t.MapType().Hiter

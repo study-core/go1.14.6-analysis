@@ -388,28 +388,28 @@ type uncommontype struct {
 	_       uint32 // unused
 }
 
-type imethod struct {
+type imethod struct {   // 和 reflect/type.go 的 type imethod struct 结构一致
 	name nameOff
 	ityp typeOff
 }
 
 // 类似于_type，其作用就是interface的公共描述，类似的还有maptype、arraytype、chantype, ... 其都是各个结构的公共描述，可以理解为一种外在的表现信息
 //
-//  供 runtime 使用的  运行时 interface 类型
+//  供 runtime 使用的  运行时 interface 类型       和 reflect/type.go 的 type interfaceType struct  结构 一致
 type interfacetype struct {
 	typ     _type
 	pkgpath name
 	mhdr    []imethod
 }
 
-// 供 runtime 使用的  运行时 map 的类型
+// 供 runtime 使用的  运行时 map 的类型   和 reflect/type.go 的 type mapType struct  结构一致
 type maptype struct {
 
 	// 整个 map 的类型
 	typ    _type
 	// map 的 key 的类型
 	key    *_type
-	// val 类型??
+	// val 类型
 	elem   *_type
 
 	// 代表哈希桶的内部类型
@@ -421,27 +421,32 @@ type maptype struct {
 	// 散列键（点到键，种子）的函数->散列
 	hasher     func(unsafe.Pointer, uintptr) uintptr
 
+	// 每个key 槽的大小
 	keysize    uint8  // size of key slot
+	// 每个value 槽的大小
 	elemsize   uint8  // size of elem slot
+	// 桶的大小
 	bucketsize uint16 // size of bucket
+
+	// 描述 map 的key 的特性的 一个标识位
 	flags      uint32
 }
 
 // Note: flag values must match those used in the TMAP case
 // in ../cmd/compile/internal/gc/reflect.go:dtypesym.
-func (mt *maptype) indirectkey() bool { // store ptr to key instead of key itself
+func (mt *maptype) indirectkey() bool { // store ptr to key instead of key itself   将ptr存储到 key 而不是 key本身
 	return mt.flags&1 != 0
 }
-func (mt *maptype) indirectelem() bool { // store ptr to elem instead of elem itself
+func (mt *maptype) indirectelem() bool { // store ptr to elem instead of elem itself	将ptr存储到elem而不是elem本身
 	return mt.flags&2 != 0
 }
-func (mt *maptype) reflexivekey() bool { // true if k==k for all keys
+func (mt *maptype) reflexivekey() bool { // true if k==k for all keys			如果所有 key 的 k == k，则为true
 	return mt.flags&4 != 0
 }
-func (mt *maptype) needkeyupdate() bool { // true if we need to update key on an overwrite
+func (mt *maptype) needkeyupdate() bool { // true if we need to update key on an overwrite		如果 我们需要在覆盖时更新 key，则为true
 	return mt.flags&8 != 0
 }
-func (mt *maptype) hashMightPanic() bool { // true if hash function might panic
+func (mt *maptype) hashMightPanic() bool { // true if hash function might panic		如果 哈希函数 可能出现 panic，则为true
 	return mt.flags&16 != 0
 }
 

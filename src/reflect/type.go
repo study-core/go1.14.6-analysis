@@ -389,8 +389,8 @@ type Type interface {
 type Kind uint
 
 const (
-	Invalid Kind = iota
-	Bool
+	Invalid Kind = iota				// 不可用类型
+	Bool							//	布尔类型
 	Int
 	Int8
 	Int16
@@ -411,11 +411,11 @@ const (
 	Func
 	Interface
 	Map
-	Ptr
+	Ptr								// 指针
 	Slice
 	String
 	Struct
-	UnsafePointer
+	UnsafePointer					// 安全指针
 )
 
 // tflag is used by an rtype to signal what extra type information is
@@ -425,6 +425,18 @@ const (
 //	cmd/compile/internal/gc/reflect.go
 //	cmd/link/internal/ld/decodesym.go
 //	runtime/type.go
+//
+//
+// rtype使用`tflag`来指示  紧随rtype值之后的内存中还有 哪些 额外的类型信息
+//
+// `tflag`值必须与以下副本保持同步：
+//
+//	cmd/compile/internal/gc/reflect.go
+//	cmd/link/internal/ld/decodesym.go
+//	runtime/type.go
+//
+//
+//
 type tflag uint8
 
 const (
@@ -511,31 +523,46 @@ type rtype struct {
 	// 字符串形式
 	str       nameOff // string form
 
-	// 指向此类型的指针的类型，可以为零
+	// 指向此类型的指针的类型，可以为零 (nil)
 	ptrToThis typeOff // type for pointer to this type, may be zero
 }
 
 // Method on non-interface type
+//
+// 非接口类型 的方法  方法定义
 type method struct {
-	name nameOff // name of method
-	mtyp typeOff // method type (without receiver)
-	ifn  textOff // fn used in interface call (one-word receiver)
-	tfn  textOff // fn used for normal method call
+	name nameOff // name of method										名称
+	mtyp typeOff // method type (without receiver)						方法类型（无接收者）
+	ifn  textOff // fn used in interface call (one-word receiver)		接口调用中使用的 fn（一个字 的接收者）
+	tfn  textOff // fn used for normal method call						fn 用于普通方法调用
 }
 
 // uncommonType is present only for defined types or types with methods
 // (if T is a defined type, the uncommonTypes for T and *T have methods).
 // Using a pointer to this struct reduces the overall size required
 // to describe a non-defined type with no methods.
+//
+//
+// uncommonType 仅对于定义的 类型 或 带有方法的类型 存在 (如果T是定义的类型，则 T 和 *T 的 uncommonTypes 具有方法)
+//
+// 使用指向此结构的指针 可减少描述不带方法的未定义类型所需的总体大小
+//
+//
 type uncommonType struct {
+	// 导入路径; 对于内置类型 (如int，string) 为空
 	pkgPath nameOff // import path; empty for built-in types like int, string
+	// 方法的个数
 	mcount  uint16  // number of methods
+	// 到处方法的个数
 	xcount  uint16  // number of exported methods
+	// 从此 `uncommontype` 到 [mcount] 方法的偏移量
 	moff    uint32  // offset from this uncommontype to [mcount]method
-	_       uint32  // unused
+
+	// 用来做内存对齐用的
+	_       uint32  // unused   没用过
 }
 
-// ChanDir represents a channel type's direction.
+// ChanDir represents a channel type's direction.   表示  chan 的方向
 type ChanDir int
 
 const (
@@ -545,18 +572,22 @@ const (
 )
 
 // arrayType represents a fixed array type.
+//
+// 数组类型 表示
 type arrayType struct {
 	rtype
-	elem  *rtype // array element type
-	slice *rtype // slice type
-	len   uintptr
+	elem  *rtype // array element type		数组元素的类型
+	slice *rtype // slice type				切片的类型 (数组的全类型)
+	len   uintptr							// 数组的长度
 }
 
 // chanType represents a channel type.
+//
+// 通道类型 表示
 type chanType struct {
 	rtype
-	elem *rtype  // channel element type
-	dir  uintptr // channel direction (ChanDir)
+	elem *rtype  // channel element type			通道元素的类型
+	dir  uintptr // channel direction (ChanDir)		通道的方向
 }
 
 // funcType represents a function type.
@@ -570,56 +601,98 @@ type chanType struct {
 //		uncommonType
 //		[2]*rtype    // [0] is in, [1] is out
 //	}
+//
+//
+// funcType表示函数类型。
+//
+//	每个 in 和 out 参数的 *rtype 存储在一个数组中，该数组紧随 funcType (可能还有其uncommonType). 因此，具有一个方法，一个输入 和 一个输出的函数类型为：
+//
+//	struct {
+//		funcType
+//		uncommonType
+//		[2]*rtype    // [0] is in, [1] is out
+//	}
+//
+//
 type funcType struct {
 	rtype
 	inCount  uint16
-	outCount uint16 // top bit is set if last input parameter is ...
+	outCount uint16 // top bit is set if last input parameter is ...   如果最后一个输入参数为...，则设置 最高位
 }
 
 // imethod represents a method on an interface type
+//
+// imethod 表示接口类型上的方法     和 runtime/type.go 的 type imethod struct 结构一致
 type imethod struct {
-	name nameOff // name of method
-	typ  typeOff // .(*FuncType) underneath
+	name nameOff // name of method				方法名
+	typ  typeOff // .(*FuncType) underneath		.(*FuncType) 在下面
 }
 
 // interfaceType represents an interface type.
+//
+// interfaceType 表示接口类型			和 runtime/type.go 的 type interfacetype struct  结构 一致
 type interfaceType struct {
 	rtype
-	pkgPath name      // import path
-	methods []imethod // sorted by hash
+	pkgPath name      // import path		导入的包
+	methods []imethod // sorted by hash   	按哈希排序 (方法集)
 }
 
 // mapType represents a map type.
-type mapType struct {
+//
+// map 类型 表示
+type mapType struct {	// 和 runtime/type.go 的 type maptype struct 结构一致
+
+	// 整个 map 的类型
 	rtype
+
+	// map 的 key 的类型
 	key    *rtype // map key type
+
+	// val 类型
 	elem   *rtype // map element (value) type
+
+	// 代表哈希桶的内部类型
 	bucket *rtype // internal bucket structure
+
 	// function for hashing keys (ptr to key, seed) -> hash
+	//
+	// 散列键（点到键，种子）的函数->散列
 	hasher     func(unsafe.Pointer, uintptr) uintptr
+
+	// 每个key 槽的大小
 	keysize    uint8  // size of key slot
+	// 每个value 槽的大小
 	valuesize  uint8  // size of value slot
+	// 桶的大小
 	bucketsize uint16 // size of bucket
+
+	// 描述 map 的key 的特性的 一个标识位
 	flags      uint32
 }
 
 // ptrType represents a pointer type.
+//
+// 指针类型 的表示
 type ptrType struct {
 	rtype
 	elem *rtype // pointer element (pointed at) type
 }
 
 // sliceType represents a slice type.
+//
+// slice类型 的表示
 type sliceType struct {
 	rtype
 	elem *rtype // slice element type
 }
 
 // Struct field
+//
+// 结构体的 字段
 type structField struct {
-	name        name    // name is always non-empty
-	typ         *rtype  // type of field
-	offsetEmbed uintptr // byte offset of field<<1 | isEmbedded
+	name        name    // name is always non-empty					字段名
+	typ         *rtype  // type of field							字段类型
+	offsetEmbed uintptr // byte offset of field<<1 | isEmbedded		字段 << 1的字节偏移| 嵌入
 }
 
 func (f *structField) offset() uintptr {
@@ -631,10 +704,12 @@ func (f *structField) embedded() bool {
 }
 
 // structType represents a struct type.
+//
+// 结构体类型 的表示
 type structType struct {
-	rtype
-	pkgPath name
-	fields  []structField // sorted by offset
+	rtype					// 类型
+	pkgPath name			// 所在包名
+	fields  []structField // sorted by offset			字段集
 }
 
 // name is an encoded type name with optional extra data.
@@ -660,6 +735,28 @@ type structType struct {
 //
 // If a name starts with "*", then the exported bit represents
 // whether the pointed to type is exported.
+//
+//
+//
+// name 是带有可选的额外数据的编码类型名称
+//
+// 第一个字节是一个位字段，其中包含：
+//
+// 1 << 0导出名称
+// 1 << 1标签数据跟随名称
+// 1 << 2 pkgPath nameOff跟随名称和标记
+//
+// 接下来的两个字节是数据长度：
+//
+//     l := uint16(data[1])<<8 | uint16(data[2])
+//
+// Bytes [3:3+l] 是字符串数据
+//
+// 如果跟随标签数据，则字节3 + 1和3 + 1 + 1是标签长度，其后跟随数据
+//
+// 如果遵循导入路径，则数据末尾的4个字节形成nameOff。 仅为在与包类型不同的包中定义的具体方法设置导入路径
+//
+// 如果名称以 "*" 开头，则导出的位表示是否导出了所指向的类型
 type name struct {
 	bytes *byte
 }
@@ -697,7 +794,7 @@ func (n name) name() (s string) {
 }
 
 func (n name) tag() (s string) {
-	tl := n.tagLen()
+	tl := n.tagLen()    // 获取 名称上的 tag  todo (特别是 struct 的 Field 中的 tag)
 	if tl == 0 {
 		return ""
 	}
@@ -763,6 +860,8 @@ func newName(n, tag string, exported bool) name {
  */
 
 // Method represents a single method.
+//
+// 方法的 表示
 type Method struct {
 	// Name is the method name.
 	// PkgPath is the package path that qualifies a lower case (unexported)
@@ -780,7 +879,7 @@ type Method struct {
 
 const (
 	kindDirectIface = 1 << 5
-	kindGCProg      = 1 << 6 // Type.gc points to GC program
+	kindGCProg      = 1 << 6 // Type.gc points to GC program  		Type.gc指向GC程序
 	kindMask        = (1 << 5) - 1
 )
 
@@ -875,9 +974,9 @@ func resolveReflectText(ptr unsafe.Pointer) textOff {
 	return textOff(addReflectOff(ptr))
 }
 
-type nameOff int32 // offset to a name
-type typeOff int32 // offset to an *rtype
-type textOff int32 // offset from top of text section
+type nameOff int32 // offset to a name						名称 偏移量
+type typeOff int32 // offset to an *rtype					*rtype 偏移量
+type textOff int32 // offset from top of text section		与 text 段 顶部的 偏移量
 
 func (t *rtype) nameOff(off nameOff) name {
 	return name{(*byte)(resolveNameOff(unsafe.Pointer(t), int32(off)))}
@@ -2072,29 +2171,38 @@ func MapOf(key, elem Type) Type {
 		return typehash(ktyp, p, seed)
 	}
 	mt.flags = 0
+	// 如果 key 太大, 则存储 key 的指针
 	if ktyp.size > maxKeySize {
 		mt.keysize = uint8(ptrSize)
-		mt.flags |= 1 // indirect key
+		mt.flags |= 1 // indirect key   间接键   (将ptr存储到 key 而不是 key本身)
 	} else {
 		mt.keysize = uint8(ktyp.size)
 	}
+
+	// 如果 value 太大, 则 存储 value 的指针
 	if etyp.size > maxValSize {
 		mt.valuesize = uint8(ptrSize)
-		mt.flags |= 2 // indirect value
+		mt.flags |= 2 // indirect value  间接value (将ptr存储到elem而不是elem本身)
 	} else {
 		mt.valuesize = uint8(etyp.size)
 	}
 	mt.bucketsize = uint16(mt.bucket.size)
+
+	// 可以 【反身】时
 	if isReflexive(ktyp) {
 		mt.flags |= 4
 	}
+
+	// 需要在覆盖时更新 key
 	if needKeyUpdate(ktyp) {
 		mt.flags |= 8
 	}
+
+	// 哈希函数 可能出现 panic
 	if hashMightPanic(ktyp) {
 		mt.flags |= 16
 	}
-	mt.ptrToThis = 0
+	mt.ptrToThis = 0    // 指向此类型的指针的类型，可以为零 (nil)
 
 	ti, _ := lookupCache.LoadOrStore(ckey, &mt.rtype)
 	return ti.(Type)
@@ -2282,16 +2390,23 @@ func funcStr(ft *funcType) string {
 
 // isReflexive reports whether the == operation on the type is reflexive.
 // That is, x == x for all values x of type t.
+//
+//
+// `isReflexive()` 报告类型上的==操作是否是自反的
+//
+// 也就是说，对于类型 t 的所有值 x，x == x
+//
+// 主要针对  map 的 key 的类型做, 是否可以比较判断
 func isReflexive(t *rtype) bool {
 	switch t.Kind() {
-	case Bool, Int, Int8, Int16, Int32, Int64, Uint, Uint8, Uint16, Uint32, Uint64, Uintptr, Chan, Ptr, String, UnsafePointer:
+	case Bool, Int, Int8, Int16, Int32, Int64, Uint, Uint8, Uint16, Uint32, Uint64, Uintptr, Chan, Ptr, String, UnsafePointer:	// 这些类型的 key 是可以 比较key是否相等的
 		return true
-	case Float32, Float64, Complex64, Complex128, Interface:
+	case Float32, Float64, Complex64, Complex128, Interface:		// 这些类型是不可以 比较的  (但是可以作为 Map 的key, 不会报错)
 		return false
-	case Array:
+	case Array:		// 数组, 只有 数组的elem 的类型 可以比较时, 整个数组才可以比较
 		tt := (*arrayType)(unsafe.Pointer(t))
 		return isReflexive(tt.elem)
-	case Struct:
+	case Struct:	// 结构体也是, 只有所有字段可以 比较时, 整个 结构体才可以比较
 		tt := (*structType)(unsafe.Pointer(t))
 		for _, f := range tt.fields {
 			if !isReflexive(f.typ) {
@@ -2300,12 +2415,14 @@ func isReflexive(t *rtype) bool {
 		}
 		return true
 	default:
-		// Func, Map, Slice, Invalid
+		// Func, Map, Slice, Invalid    todo 这一句 我们就知道  Func Map Slice 三者是不可以作为 Map的 key 的
 		panic("isReflexive called on non-key type " + t.String())
 	}
 }
 
-// needKeyUpdate reports whether map overwrites require the key to be copied.
+//  reports whether map overwrites require the key to be copied.
+//
+//  `needKeyUpdate()` 报告是否覆盖 Map 要求复制 key
 func needKeyUpdate(t *rtype) bool {
 	switch t.Kind() {
 	case Bool, Int, Int8, Int16, Int32, Int64, Uint, Uint8, Uint16, Uint32, Uint64, Uintptr, Chan, Ptr, UnsafePointer:
@@ -2314,6 +2431,11 @@ func needKeyUpdate(t *rtype) bool {
 		// Float keys can be updated from +0 to -0.
 		// String keys can be updated to use a smaller backing store.
 		// Interfaces might have floats of strings in them.
+		//
+		//
+		// Float类型 的 key 可以从 +0 更新为 -0
+		// String类型 的 key 可以被更新为使用较小的后备存储
+		// Interface类型的 key 中可能包含字符串的浮点数
 		return true
 	case Array:
 		tt := (*arrayType)(unsafe.Pointer(t))
@@ -2332,15 +2454,17 @@ func needKeyUpdate(t *rtype) bool {
 	}
 }
 
-// hashMightPanic reports whether the hash of a map key of type t might panic.
+//  reports whether the hash of a map key of type t might panic.
+//
+// `hashMightPanic()` 报告 类型为 t 的 Map 的 Key 的 hash 是否可能出现 panic
 func hashMightPanic(t *rtype) bool {
 	switch t.Kind() {
-	case Interface:
+	case Interface:		// 接口 求不了 Hash 的 会出现 panic
 		return true
-	case Array:
+	case Array:			// 数组是否会在求 hash 时出现 panic, 看 它的 elem
 		tt := (*arrayType)(unsafe.Pointer(t))
 		return hashMightPanic(tt.elem)
-	case Struct:
+	case Struct:		// 结构体 类似数组
 		tt := (*structType)(unsafe.Pointer(t))
 		for _, f := range tt.fields {
 			if hashMightPanic(f.typ) {

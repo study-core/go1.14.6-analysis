@@ -191,6 +191,12 @@ type bmap struct {
 // A hash iteration structure.
 // If you modify hiter, also change cmd/compile/internal/gc/reflect.go to indicate
 // the layout of this structure.
+//
+//
+//
+// 哈希迭代结构  (Map 的 迭代器)
+//
+// 如果您修改了 `hiter`，还请更改 cmd/compile/internal/gc/reflect.go 以指示此结构的布局
 type hiter struct {
 	key         unsafe.Pointer // Must be in first position.  Write nil to indicate iteration end (see cmd/internal/gc/range.go).
 	elem        unsafe.Pointer // Must be in second position (see cmd/internal/gc/range.go).
@@ -846,6 +852,14 @@ search:
 // The hiter struct pointed to by 'it' is allocated on the stack
 // by the compilers order pass or on the heap by reflect_mapiterinit.
 // Both need to have zeroed hiter since the struct contains pointers.
+//
+//
+// `mapiterinit()` 初始化用于在 map 上进行测距的 hiter 结构
+//  'it' 指向的hiter结构由编译器顺序传递分配在堆栈上，或者由 reflect_mapiterinit分配在堆上
+//
+// 由于结构包含指针，因此两者都需要将hiter置零
+//
+// 初始化 map 的 迭代器 hiter
 func mapiterinit(t *maptype, h *hmap, it *hiter) {
 	if raceenabled && h != nil {
 		callerpc := getcallerpc()
@@ -1320,6 +1334,8 @@ func advanceEvacuationMark(h *hmap, t *maptype, newbit uintptr) {
 
 // Reflect stubs. Called from ../reflect/asm_*.s
 
+//
+// 创建 一个 map  (make(map[type]type, size))
 //go:linkname reflect_makemap reflect.makemap
 func reflect_makemap(t *maptype, cap int) *hmap {
 
