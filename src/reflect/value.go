@@ -1229,6 +1229,8 @@ func (v Value) MapIndex(key Value) Value {
 	return copyVal(typ, fl, e)
 }
 
+// 获取 Map 的所有 key集
+//
 // MapKeys returns a slice containing all the keys present in the map,
 // in unspecified order.
 // It panics if v's Kind is not Map.
@@ -1245,9 +1247,11 @@ func (v Value) MapKeys() []Value {
 	if m != nil {
 		mlen = maplen(m)
 	}
-	it := mapiterinit(v.typ, m)
+	it := mapiterinit(v.typ, m)		// 初始化,map 的 迭代器
 	a := make([]Value, mlen)
 	var i int
+
+	// 遍历 Map 的迭代器
 	for i = 0; i < len(a); i++ {
 		key := mapiterkey(it)
 		if key == nil {
@@ -1257,7 +1261,7 @@ func (v Value) MapKeys() []Value {
 			break
 		}
 		a[i] = copyVal(keyType, fl, key)
-		mapiternext(it)
+		mapiternext(it)  // 获取 map 的下一个 迭代器
 	}
 	return a[:i]
 }

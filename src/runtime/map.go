@@ -99,7 +99,7 @@ const (
 	// flags
 	iterator     = 1 // there may be an iterator using buckets
 	oldIterator  = 2 // there may be an iterator using oldbuckets
-	hashWriting  = 4 // a goroutine is writing to the map
+	hashWriting  = 4 // a goroutine is writing to the map									有 协程正在写 map
 	sameSizeGrow = 8 // the current map growth is to a new map of the same size
 
 	// sentinel bucket ID for iterator checks
@@ -198,17 +198,29 @@ type bmap struct {
 //
 // 如果您修改了 `hiter`，还请更改 cmd/compile/internal/gc/reflect.go 以指示此结构的布局
 type hiter struct {
+
+	// 必须处于第一位置. 写nil表示迭代结束 (请参阅 cmd/internal/gc/range.go)
 	key         unsafe.Pointer // Must be in first position.  Write nil to indicate iteration end (see cmd/internal/gc/range.go).
 	elem        unsafe.Pointer // Must be in second position (see cmd/internal/gc/range.go).
+
+	// 当前迭代器对应的map 的底层类型
 	t           *maptype
+
+	// 当前 迭代器 对应的 map 的指针
 	h           *hmap
-	buckets     unsafe.Pointer // bucket ptr at hash_iter initialization time
+
+	//  当前 迭代器 对应的 map 中各个 bucket 数组的头指针
+	buckets     unsafe.Pointer // bucket ptr at hash_iter initialization time   hash_iter 初始化时的 bucket ptr
+
+	// 当前正在遍历的  bucket
 	bptr        *bmap          // current bucket
 	overflow    *[]*bmap       // keeps overflow buckets of hmap.buckets alive
 	oldoverflow *[]*bmap       // keeps overflow buckets of hmap.oldbuckets alive
 	startBucket uintptr        // bucket iteration started at
 	offset      uint8          // intra-bucket offset to start from during iteration (should be big enough to hold bucketCnt-1)
 	wrapped     bool           // already wrapped around from end of bucket array to beginning
+
+	// 当前 迭代器 对应的 map 的 B值
 	B           uint8
 	i           uint8
 	bucket      uintptr
@@ -873,23 +885,34 @@ func mapiterinit(t *maptype, h *hmap, it *hiter) {
 	if unsafe.Sizeof(hiter{})/sys.PtrSize != 12 {
 		throw("hash_iter size incorrect") // see cmd/compile/internal/gc/reflect.go
 	}
+
+	// 给 迭代器 赋值 所属的 map 的 底层类型 和 底层引用
 	it.t = t
 	it.h = h
 
-	// grab snapshot of bucket state
+	// grab snapshot of bucket state   抓取 桶状态 state
 	it.B = h.B
 	it.buckets = h.buckets
+
+
 	if t.bucket.ptrdata == 0 {
 		// Allocate the current slice and remember pointers to both current and old.
 		// This preserves all relevant overflow buckets alive even if
 		// the table grows and/or overflow buckets are added to the table
 		// while we are iterating.
+		//
+		//
+		// 分配当前切片，并记住指向 当前 和 旧指针
+		//
+		// 这样即使表不断增长 and/or 在我们进行迭代时将溢出桶添加到表中，也可以使所有相关的溢出桶保持活动状态
+		//
+		//
 		h.createOverflow()
 		it.overflow = h.extra.overflow
 		it.oldoverflow = h.extra.oldoverflow
 	}
 
-	// decide where to start
+	// decide where to start     决定从哪里开始 开始遍历 map   todo 遍历map随机的原因
 	r := uintptr(fastrand())
 	if h.B > 31-bucketCntBits {
 		r += uintptr(fastrand()) << 31
@@ -909,15 +932,20 @@ func mapiterinit(t *maptype, h *hmap, it *hiter) {
 	mapiternext(it)
 }
 
+// 取Map的下一个迭代器
 func mapiternext(it *hiter) {
+
+	// 获取 当前 迭代器 对应的 map 指针
 	h := it.h
 	if raceenabled {
 		callerpc := getcallerpc()
 		racereadpc(unsafe.Pointer(h), callerpc, funcPC(mapiternext))
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map iteration and map write")
+		throw("concurrent map iteration and map write")   // 遍历 map 的同时 出现了 map 的写, 抛 panic
 	}
+
+	// 获取当前 map 的底层类型
 	t := it.t
 	bucket := it.bucket
 	b := it.bptr
@@ -1036,6 +1064,8 @@ next:
 }
 
 // mapclear deletes all keys from a map.
+//
+// 清空 map 中所有 key
 func mapclear(t *maptype, h *hmap) {
 	if raceenabled && h != nil {
 		callerpc := getcallerpc()
@@ -1399,13 +1429,24 @@ func reflect_mapdelete(t *maptype, h *hmap, key unsafe.Pointer) {
 	mapdelete(t, h, key)
 }
 
+// 初始化 map 的迭代器
+//
 //go:linkname reflect_mapiterinit reflect.mapiterinit
 func reflect_mapiterinit(t *maptype, h *hmap) *hiter {
+
+	// 首先,  new 一个迭代器指针
 	it := new(hiter)
+
+	// 初始化Map的迭代器
 	mapiterinit(t, h, it)
+
+	// 返回该迭代器
 	return it
 }
 
+
+// 返回 map 的写一个迭代器
+//
 //go:linkname reflect_mapiternext reflect.mapiternext
 func reflect_mapiternext(it *hiter) {
 	mapiternext(it)
