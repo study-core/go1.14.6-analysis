@@ -2375,6 +2375,11 @@ func MakeMapWithSize(typ Type, n int) Value {
 // Indirect returns the value that v points to.
 // If v is a nil pointer, Indirect returns a zero Value.
 // If v is not a pointer, Indirect returns v.
+//
+//
+// `Indirect()` 返回v指向的值           Indirect: 间接
+// 如果v是 nil指针，则Indirect返回零值
+// 如果v不是 指针，则Indirect返回v
 func Indirect(v Value) Value {
 	if v.Kind() != Ptr {
 		return v
