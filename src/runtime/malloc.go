@@ -1279,6 +1279,10 @@ func newobject(typ *_type) unsafe.Pointer {
 	return mallocgc(typ.size, typ, true)
 }
 
+// 实现了 value.go 的 refelct.unsafe_New()
+//
+// new 一个对象指针
+//
 //go:linkname reflect_unsafe_New reflect.unsafe_New
 func reflect_unsafe_New(typ *_type) unsafe.Pointer {
 	return mallocgc(typ.size, typ, true)
@@ -1303,6 +1307,10 @@ func newarray(typ *_type, n int) unsafe.Pointer {
 	return mallocgc(mem, typ, true)
 }
 
+// 实现了 value.go 的 reflect.unsafe_NewArray()
+//
+// 创建一个 数组
+//
 //go:linkname reflect_unsafe_NewArray reflect.unsafe_NewArray
 func reflect_unsafe_NewArray(typ *_type, n int) unsafe.Pointer {
 	return newarray(typ, n)

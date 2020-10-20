@@ -568,6 +568,8 @@ retc:
 	if cas.releasetime > 0 {
 		blockevent(cas.releasetime-t0, 1)
 	}
+
+	// 返回 select  case 的 index  和 是否可以接收 chan
 	return casi, recvOK
 
 sclose:
@@ -609,6 +611,9 @@ const (
 )
 
 // select 关键字的执行对外的 入口
+//
+// 实现了 value.go 的 reflect.rselect()
+//
 //go:linkname reflect_rselect reflect.rselect
 func reflect_rselect(cases []runtimeSelect) (int, bool) {
 	if len(cases) == 0 {

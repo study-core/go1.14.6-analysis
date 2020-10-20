@@ -539,9 +539,9 @@ type uncommonType struct {
 type ChanDir int
 
 const (
-	RecvDir ChanDir             = 1 << iota // <-chan
-	SendDir                                 // chan<-
-	BothDir = RecvDir | SendDir             // chan
+	RecvDir ChanDir             = 1 << iota // <-chan			单向 接收 chan
+	SendDir                                 // chan<-			单向 发送 chan
+	BothDir = RecvDir | SendDir             // chan				双向 chan
 )
 
 // arrayType represents a fixed array type.
@@ -1563,14 +1563,16 @@ func (t *structType) FieldByName(name string) (f StructField, present bool) {
 // TypeOf returns the reflection Type that represents the dynamic type of i.
 // If i is a nil interface value, TypeOf returns nil.
 //
+// todo 反射返回数据的 类型
+//
 // TypeOf() 返回表示 i 的动态类型的反射类型
 // 如果i是一个nil接口值，TypeOf返回nil
 func TypeOf(i interface{}) Type {
-	eface := *(*emptyInterface)(unsafe.Pointer(&i))
-	return toType(eface.typ)
+	eface := *(*emptyInterface)(unsafe.Pointer(&i))  	// todo 将入参的 interface 直接转成 emptyInterface{} 类型, 这个对应的是  runtime.eface 表示没有方法集的 接口类型
+	return toType(eface.typ)							// 然后 直接取出 type
 }
 
-// ptrMap is the cache for PtrTo.
+// ptrMap is the cache for PtrTo.             ptrMap是PtrTo的缓存
 var ptrMap sync.Map // map[*rtype]*ptrType
 
 // PtrTo returns the pointer type with element t.
@@ -3266,6 +3268,8 @@ func funcLayout(t *funcType, rcvr *rtype) (frametype *rtype, argSize, retOffset 
 }
 
 // ifaceIndir reports whether t is stored indirectly in an interface value.
+//
+// ifaceIndir() 报告 t 是否 间接 存储 在 接口值中
 func ifaceIndir(t *rtype) bool {
 	return t.kind&kindDirectIface == 0
 }

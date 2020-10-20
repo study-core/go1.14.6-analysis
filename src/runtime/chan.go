@@ -57,6 +57,10 @@ type waitq struct {
 	last  *sudog		// 队列尾 g
 }
 
+// 实现了  value.go 的 reflect.makechan()
+//
+// 创建一个 chan
+//
 //go:linkname reflect_makechan reflect.makechan
 func reflect_makechan(t *chantype, size int) *hchan {
 	return makechan(t, size)
@@ -70,6 +74,7 @@ func makechan64(t *chantype, size int64) *hchan {
 	return makechan(t, int(size))
 }
 
+// 创建一个通道  创建一个chan (make(chan type, size))
 func makechan(t *chantype, size int) *hchan {
 	elem := t.elem
 

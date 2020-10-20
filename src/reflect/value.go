@@ -105,7 +105,7 @@ const (
 	flagKindMask    flag = 1<<flagKindWidth - 1
 	flagStickyRO    flag = 1 << 5
 	flagEmbedRO     flag = 1 << 6
-	flagIndir       flag = 1 << 7
+	flagIndir       flag = 1 << 7		// 指向的 data 是否为指针
 	flagAddr        flag = 1 << 8
 	flagMethod      flag = 1 << 9
 	flagMethodShift      = 10
@@ -173,17 +173,23 @@ func packEface(v Value) interface{} {
 }
 
 // unpackEface converts the empty interface i to a Value.
+//
+// unpackEface() 将空接口 i 转换为 Value
 func unpackEface(i interface{}) Value {
 	e := (*emptyInterface)(unsafe.Pointer(&i))
 	// NOTE: don't read e.word until we know whether it is really a pointer or not.
+	//
+	// 注意：在我们知道 e.word 是否真的是指针之前，不要读它
 	t := e.typ
 	if t == nil {
 		return Value{}
 	}
 	f := flag(t.Kind())
-	if ifaceIndir(t) {
-		f |= flagIndir
+	if ifaceIndir(t) {    	// 如果 指向的 word  是指针的话
+		f |= flagIndir		// 追加 指针标识
 	}
+
+	// 封装 一个 value 返回
 	return Value{t, e.word, f}
 }
 
@@ -2159,6 +2165,10 @@ type runtimeSelect struct {
 	val unsafe.Pointer // ptr to data (SendDir) or ptr to receive buffer (RecvDir)
 }
 
+// select 的入口
+//
+// 真正的实现在 select.go 的 runtime.reflect_rselect()
+//
 // rselect runs a select. It returns the index of the chosen case.
 // If the case was a receive, val is filled in with the received value.
 // The conventional OK bool indicates whether the receive corresponds
@@ -2201,6 +2211,8 @@ type SelectCase struct {
 	Send Value     // value to send (for send)
 }
 
+// 通过 反射 创建一个  select 结构
+//
 // Select executes a select operation described by the list of cases.
 // Like the Go select statement, it blocks until at least one of the cases
 // can proceed, makes a uniform pseudo-random choice,
@@ -2278,13 +2290,15 @@ func Select(cases []SelectCase) (chosen int, recv Value, recvOK bool) {
 		}
 	}
 
-	chosen, recvOK = rselect(runcases)
+	// 返回 select case 的 index 和 是否 可以接收chan
+	chosen, recvOK = rselect(runcases)    // todo 调用 select 的执行入口
+
 	if runcases[chosen].dir == SelectRecv {
 		tt := (*chanType)(unsafe.Pointer(runcases[chosen].typ))
 		t := tt.elem
 		p := runcases[chosen].val
 		fl := flag(t.Kind())
-		if ifaceIndir(t) {
+		if ifaceIndir(t) {  // 校验底层的 word 是否指向的是 指针
 			recv = Value{t, p, fl | flagIndir}
 		} else {
 			recv = Value{t, *(*unsafe.Pointer)(p), fl}
@@ -2298,9 +2312,11 @@ func Select(cases []SelectCase) (chosen int, recv Value, recvOK bool) {
  */
 
 // implemented in package runtime
-func unsafe_New(*rtype) unsafe.Pointer
-func unsafe_NewArray(*rtype, int) unsafe.Pointer
+func unsafe_New(*rtype) unsafe.Pointer				// 在 malloc.go 的 runtime.reflect_unsafe_New() 才是真正的实现
+func unsafe_NewArray(*rtype, int) unsafe.Pointer   	// 在 malloc.go 的 runtime.reflect_unsafe_NewArray() 才是真正的实现
 
+// 通过 反射 make 一个 slice
+//
 // MakeSlice creates a new zero-initialized slice value
 // for the specified slice type, length, and capacity.
 func MakeSlice(typ Type, len, cap int) Value {
@@ -2317,11 +2333,14 @@ func MakeSlice(typ Type, len, cap int) Value {
 		panic("reflect.MakeSlice: len > cap")
 	}
 
+	// 获取 slice 的 header
 	s := sliceHeader{unsafe_NewArray(typ.Elem().(*rtype), cap), len, cap}
 	return Value{typ.(*rtype), unsafe.Pointer(&s), flagIndir | flag(Slice)}
 }
 
 // MakeChan creates a new channel with the specified type and buffer size.
+//
+// MakeChan()  创建具有指定类型和缓冲区大小的新通道
 func MakeChan(typ Type, buffer int) Value {
 	if typ.Kind() != Chan {
 		panic("reflect.MakeChan of non-chan type")
@@ -2329,11 +2348,11 @@ func MakeChan(typ Type, buffer int) Value {
 	if buffer < 0 {
 		panic("reflect.MakeChan: negative buffer size")
 	}
-	if typ.ChanDir() != BothDir {
+	if typ.ChanDir() != BothDir {   // make (chan) 必须为  双向 chan
 		panic("reflect.MakeChan: unidirectional channel type")
 	}
 	t := typ.(*rtype)
-	ch := makechan(t, buffer)
+	ch := makechan(t, buffer)   // 最终调用 runtime 的 makechan() 创建一个 chan
 	return Value{t, ch, flag(Chan)}
 }
 
@@ -2365,6 +2384,11 @@ func Indirect(v Value) Value {
 
 // ValueOf returns a new Value initialized to the concrete value
 // stored in the interface i. ValueOf(nil) returns the zero Value.
+//
+// todo 反射返回数据的 值
+//
+//
+// `ValueOf（）`返回一个新的值，该值初始化为接口i中存储的具体值。 ValueOf（nil）返回零值
 func ValueOf(i interface{}) Value {
 	if i == nil {
 		return Value{}
@@ -2374,8 +2398,12 @@ func ValueOf(i interface{}) Value {
 	// For now we make the contents always escape to the heap. It
 	// makes life easier in a few places (see chanrecv/mapassign
 	// comment below).
+	//
+	// TODO：也许允许Value的内容存在于堆栈中
+	// 现在, 我们使内容始终转储到堆中. 它使某些地方的生活更加轻松 (请参阅下面的 chanrecv/mapassign 评论)
 	escapes(i)
 
+	// 获取 interface 指向的 底层 Value
 	return unpackEface(i)
 }
 
@@ -2756,6 +2784,7 @@ func chanrecv(ch unsafe.Pointer, nb bool, val unsafe.Pointer) (selected, receive
 //go:noescape
 func chansend(ch unsafe.Pointer, val unsafe.Pointer, nb bool) bool
 
+// 在 chan.go 的 runtime.reflect_makechan() 是真正的实现
 func makechan(typ *rtype, size int) (ch unsafe.Pointer)
 func makemap(t *rtype, cap int) (m unsafe.Pointer)
 
@@ -2829,12 +2858,15 @@ func typehash(t *rtype, p unsafe.Pointer, h uintptr) uintptr
 // Dummy annotation marking that the value x escapes,
 // for use in cases where the reflect code is so clever that
 // the compiler cannot follow.
+//
+// 虚拟注释，标记 x 的值转义，用于 反射代码非常 聪明以至于编译器无法遵循的情况
 func escapes(x interface{}) {
 	if dummy.b {
 		dummy.x = x
 	}
 }
 
+// 额  这个 是什么 骚操作 ??
 var dummy struct {
 	b bool
 	x interface{}
