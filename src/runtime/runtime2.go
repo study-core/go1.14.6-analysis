@@ -414,7 +414,7 @@ type sudog struct {
 	// 如果实在 队列结构中使用, 那么就有这两个
 	next     *sudog
 	prev     *sudog
-	elem     unsafe.Pointer // data element (may point to stack)    数据元素（可能指向 栈）
+	elem     unsafe.Pointer // data element (may point to stack)    数据元素（可能指向 栈）   todo  在 和 chan 的操作中迭代的 数据 ????  sudog.elem 是指向 接收目标的内存的指针
 
 	// The following fields are never accessed concurrently.
 	// For channels, waitlink is only accessed by g.
@@ -429,6 +429,8 @@ type sudog struct {
 	parent      *sudog // semaRoot binary tree
 	waitlink    *sudog // g.waiting list or semaRoot
 	waittail    *sudog // semaRoot
+
+	// 被阻塞的 sudog 所属的 chan
 	c           *hchan // channel
 }
 
@@ -456,6 +458,12 @@ type stack struct {
 	lo uintptr
 	hi uintptr
 }
+
+/**
+可以看到如果 G 需要等待资源时,
+	会记录G的 运行状态 到 g.sched, 然后把状态改为等待中(_Gwaiting), 再让当前的 M 继续运行其他G.
+	todo 等待中的G保存在哪里, 什么时候恢复 是 【等待的资源决定的】, 比如： 对channel的等待会让G放到channel中的链表.
+ */
 
 // todo G 的定义
 type g struct {	// todo G 中有 M
@@ -490,6 +498,8 @@ type g struct {	// todo G 中有 M
 	syscallsp    uintptr        // if status==Gsyscall, syscallsp = sched.sp to use during gc
 	syscallpc    uintptr        // if status==Gsyscall, syscallpc = sched.pc to use during gc
 	stktopsp     uintptr        // expected sp at top of stack, to check in traceback
+
+	// 当G 被这里会有值, 唤醒时传递的参数
 	param        unsafe.Pointer // passed parameter on wakeup
 
 	// g的当前状态 (看 G 状态的枚举定义咯)
@@ -538,7 +548,9 @@ type g struct {	// todo G 中有 M
 	ancestors      *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)
 	startpc        uintptr         // pc of goroutine function
 	racectx        uintptr
-	waiting        *sudog         // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
+
+	// 当前 G 参与 chan 操作被阻塞时, 被封装成的sudog 的引用
+	waiting        *sudog         // sudog structures this g is waiting on (that have a valid elem ptr); in lock order   这个g正在等待的sudog结构（具有有效的elem ptr）； 锁定顺序
 	cgoCtxt        []uintptr      // cgo traceback context
 	labels         unsafe.Pointer // profiler labels
 	timer          *timer         // cached timer for time.Sleep   todo 缓存 time.Sleep() 语句的 定时器
@@ -656,6 +668,8 @@ type m struct {  // todo M 里面 有 P 和 G
 	lockedExt     uint32      // tracking for external LockOSThread
 	lockedInt     uint32      // tracking for internal lockOSThread
 	nextwaitm     muintptr    // next m waiting for lock
+
+	//  解锁函数 指针, 这里的解锁函数会对 解除channel.lock的锁定
 	waitunlockf   func(*g, unsafe.Pointer) bool
 	waitlock      unsafe.Pointer
 	waittraceev   byte
@@ -759,7 +773,7 @@ type p struct {  // todo P 中有 M
 		n int32  	// 个数
 	}
 
-	sudogcache []*sudog
+	sudogcache []*sudog		// 重复利用的 sodug 壳 缓存
 	sudogbuf   [128]*sudog
 
 	// Cache of mspan objects from the heap.

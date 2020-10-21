@@ -327,7 +327,7 @@ func gopark(unlockf func(*g, unsafe.Pointer) bool, lock unsafe.Pointer, reason w
 	mp.waittraceskip = traceskip
 	releasem(mp)
 	// can't do anything that might move the G between Ms here.
-	mcall(park_m)   // macll 会先切换成 g0，并把当前 g 作为参数调用 park_m
+	mcall(park_m)   // macll 会先切换成 g0，并把当前 g 作为参数调用  park_m()
 }
 
 // Puts the current goroutine into a waiting state and unlocks the lock.
@@ -342,6 +342,8 @@ func goparkunlock(lock *mutex, reason waitReason, traceEv byte, traceskip int) {
 
 // todo 将休眠的G 唤醒
 func goready(gp *g, traceskip int) {
+
+	// 切换到 g0 调用ready函数, 调用 完切换 回来 当前 g
 	systemstack(func() {
 		ready(gp, traceskip, true)
 	})
@@ -438,6 +440,8 @@ func releaseSudog(s *sudog) {
 		sched.sudogcache = first
 		unlock(&sched.sudoglock)
 	}
+
+	// 将 sodug 壳 丢回 P 的 sudog缓存, 重复利用
 	pp.sudogcache = append(pp.sudogcache, s)
 	releasem(mp)
 }
@@ -728,6 +732,7 @@ func fastrandinit() {
 	getRandomData(s)
 }
 
+// 唤醒G
 // Mark gp ready to run.
 func ready(gp *g, traceskip int, next bool) {
 	if trace.enabled {
@@ -746,12 +751,12 @@ func ready(gp *g, traceskip int, next bool) {
 	}
 
 	// status is Gwaiting or Gscanwaiting, make Grunnable and put on runq
-	casgstatus(gp, _Gwaiting, _Grunnable)
+	casgstatus(gp, _Gwaiting, _Grunnable)  // 把G的状态由等待中(_Gwaiting)改为待运行(_Grunnable)
 
-	// 把 g 放到 p 本地队列，next 为 true， 就放在下一个执行， next 为 false，放在队尾
+	// 把 g 放到 p 本地队列， next 为 true， 就放在下一个执行， next 为 false，放在队尾   todo (刚被唤醒的G 优先级 比在 runq 队列中的G 高)
 	runqput(_g_.m.p.ptr(), gp, next)
-	if atomic.Load(&sched.npidle) != 0 && atomic.Load(&sched.nmspinning) == 0 {  // TODO 这个看了调度代码再解释
-		wakep()
+	if atomic.Load(&sched.npidle) != 0 && atomic.Load(&sched.nmspinning) == 0 {  // TODO 如果当前 有空闲的P, 但是 无自旋的M(nmspinning等于0), 则 唤醒 或 新建 一个M
+		wakep() // 唤醒 或 新建 一个M
 	}
 	releasem(mp)
 }
@@ -3052,14 +3057,13 @@ func park_m(gp *g) {
 		traceGoPark(_g_.m.waittraceev, _g_.m.waittraceskip)
 	}
 
-	// 设置参数 g 的状态
-	casgstatus(gp, _Grunning, _Gwaiting)
-	// 删除参数 g 和 m 的关系
-	dropg()
+	casgstatus(gp, _Grunning, _Gwaiting)  // 把G的状态从运行中(_Grunning)改为等待中(_Gwaiting)
+
+	dropg() // 解除 g 和 m 的关系
 
 	if fn := _g_.m.waitunlockf; fn != nil {
 		// 执行解锁操作， 假如是从 sema 过来的，fn 永远返回 true
-		ok := fn(gp, _g_.m.waitlock)
+		ok := fn(gp, _g_.m.waitlock)  // 再调用传入的解锁函数, 这里的解锁函数会对解除 channel.lock 的锁定
 		_g_.m.waitunlockf = nil
 		_g_.m.waitlock = nil
 		if !ok {
@@ -3071,8 +3075,7 @@ func park_m(gp *g) {
 		}
 	}
 
-	// 调度其他的 g 执行
-	schedule()
+	schedule()  // 最后调用 schedule() 函数 继续调度
 }
 
 // 最终最终抢占的 最最底层实现函数

@@ -36,17 +36,18 @@ func getg() *g
 // This must NOT be go:noescape: if fn is a stack-allocated closure,
 // fn puts g on a run queue, and g executes before fn returns, the
 // closure will be invalidated while it is still executing.
-/**
-设置g.sched.pc等于当前的返回地址
-设置g.sched.sp等于寄存器rsp的值
-设置g.sched.g等于当前的g
-设置g.sched.bp等于寄存器rbp的值
-切换TLS中当前的g等于m.g0
-设置寄存器rsp等于g0.sched.sp, 使用g0的栈空间
-设置第一个参数为原来的g
-设置rdx寄存器为指向函数地址的指针(上下文)
-调用指定的函数, 不会返回
- */
+//
+// TODO 该函数操作如下:
+//  		设置g.sched.pc等于当前的返回地址
+//  		设置g.sched.sp等于寄存器rsp的值
+//  		设置g.sched.g等于当前的g
+//  		设置g.sched.bp等于寄存器rbp的值
+//  		切换TLS中当前的g等于m.g0
+//  		设置寄存器rsp等于g0.sched.sp, 使用g0的栈空间
+//  		设置第一个参数为原来的g
+//  		设置rdx寄存器为指向函数地址的指针(上下文)
+//  		调用指定的函数, 不会返回
+//
 func mcall(fn func(*g))
 
 // systemstack runs fn on a system stack.
@@ -128,7 +129,7 @@ func reflect_memclrNoHeapPointers(ptr unsafe.Pointer, n uintptr) {
 // Implementations are in memmove_*.s.
 //
 //go:noescape
-func memmove(to, from unsafe.Pointer, n uintptr)
+func memmove(to, from unsafe.Pointer, n uintptr)  // 汇编实现
 
 //go:linkname reflect_memmove reflect.memmove
 func reflect_memmove(to, from unsafe.Pointer, n uintptr) {
