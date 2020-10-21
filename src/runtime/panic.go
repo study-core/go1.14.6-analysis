@@ -616,6 +616,7 @@ func deferreturn(arg0 uintptr) {
 // the program continues execution of other goroutines.
 // If all other goroutines exit, the program crashes.
 func Goexit() {
+
 	// Run all deferred functions for the current goroutine.
 	// This code is similar to gopanic, see that implementation
 	// for detailed comments.

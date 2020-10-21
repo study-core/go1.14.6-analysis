@@ -152,6 +152,11 @@ func cheapComputableIndex(width int64) bool {
 // simpler forms.  The result must be assigned back to n.
 // Node n may also be modified in place, and may also be
 // the returned node.
+//
+// todo for-range 的实现:  编译器相关
+//
+// `walkrange()` 将各种形式的 ORANGE 转换为更简单的形式. 结果必须分配回 n
+// 节点n 也可以被修改，也可以是返回的节点
 func walkrange(n *Node) *Node {
 	if isMapClear(n) {
 		m := n.Right
@@ -210,6 +215,8 @@ func walkrange(n *Node) *Node {
 	default:
 		Fatalf("walkrange")
 
+
+	// 遍历 数组 或者 切片
 	case TARRAY, TSLICE:
 		if arrayClear(n, v1, v2, a) {
 			lineno = lno
@@ -290,6 +297,7 @@ func walkrange(n *Node) *Node {
 		a = typecheck(a, ctxStmt)
 		n.List.Set1(a)
 
+	// 遍历 Map
 	case TMAP:
 		// order.stmt allocated the iterator for us.
 		// we only use a once, so no copy needed.
@@ -301,13 +309,13 @@ func walkrange(n *Node) *Node {
 		keysym := th.Field(0).Sym  // depends on layout of iterator struct.  See reflect.go:hiter
 		elemsym := th.Field(1).Sym // ditto
 
-		fn := syslook("mapiterinit")
+		fn := syslook("mapiterinit")  // 编译: 初始化 map 的迭代器
 
 		fn = substArgTypes(fn, t.Key(), t.Elem(), th)
 		init = append(init, mkcall1(fn, nil, nil, typename(t), ha, nod(OADDR, hit, nil)))
 		n.Left = nod(ONE, nodSym(ODOT, hit, keysym), nodnil())
 
-		fn = syslook("mapiternext")
+		fn = syslook("mapiternext") // 编译: 获取 map 迭代器的 下一个
 		fn = substArgTypes(fn, th)
 		n.Right = mkcall1(fn, nil, nil, nod(OADDR, hit, nil))
 
@@ -326,6 +334,8 @@ func walkrange(n *Node) *Node {
 			body = []*Node{a}
 		}
 
+
+	// 遍历 chan
 	case TCHAN:
 		// order.stmt arranged for a copy of the channel variable.
 		ha := a
@@ -355,6 +365,7 @@ func walkrange(n *Node) *Node {
 		// See issue 15281.
 		body = append(body, nod(OAS, hv1, nil))
 
+	// 遍历 string
 	case TSTRING:
 		// Transform string range statements like "for v1, v2 = range a" into
 		//

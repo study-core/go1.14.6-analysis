@@ -1120,6 +1120,7 @@ const preemptMSupported = GOARCH != "arm"
 // suspending each other.
 var suspendLock mutex
 
+// 抢占 M
 func preemptM(mp *m) {
 	if GOARCH == "arm" {
 		// TODO: Implement call injection

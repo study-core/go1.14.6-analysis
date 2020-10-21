@@ -296,7 +296,7 @@ TEXT runtime·gosave(SB), NOSPLIT, $0-4
 	MOVL	BX, gobuf_g(AX)
 	RET
 
-// void gogo(Gobuf*)
+// void gogo(Gobuf*)        func gogo() 的汇编实现
 // restore state from Gobuf; longjmp
 TEXT runtime·gogo(SB), NOSPLIT, $8-4
 	MOVL	buf+0(FP), BX		// gobuf

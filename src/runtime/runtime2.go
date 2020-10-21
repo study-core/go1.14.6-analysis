@@ -650,7 +650,7 @@ type m struct {  // todo M 里面 有 P 和 G
 	// 分配内存时使用的本地分配器, todo  和p.mcache一样(拥有P时会复制过来)
 	mcache        *mcache
 
-	// 当 M 被恢复时, 可能使用该 G 继续执行,  和 G 中定义的  lockedm 相呼应
+	// 当 M 被恢复时, 可能使用该 G 继续执行,  和 G 中定义的  lockedm 相呼应  (一般来说只有 GC 的时候 这个才有值)
 	lockedg       guintptr
 	createstack   [32]uintptr // stack that created this thread.
 	lockedExt     uint32      // tracking for external LockOSThread
@@ -698,6 +698,8 @@ type p struct {  // todo P 中有 M
 
 	// 下一个p, 当p在链表结构中会使用
 	link        puintptr
+
+	// 增加P中记录的调度次数( 每61次优先获取一次 schedt的全局 runq队列中的G)
 	schedtick   uint32     // incremented on every scheduler call
 	syscalltick uint32     // incremented on every system call
 	sysmontick  sysmontick // last tick observed by sysmon

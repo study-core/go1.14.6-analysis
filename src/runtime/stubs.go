@@ -36,6 +36,17 @@ func getg() *g
 // This must NOT be go:noescape: if fn is a stack-allocated closure,
 // fn puts g on a run queue, and g executes before fn returns, the
 // closure will be invalidated while it is still executing.
+/**
+设置g.sched.pc等于当前的返回地址
+设置g.sched.sp等于寄存器rsp的值
+设置g.sched.g等于当前的g
+设置g.sched.bp等于寄存器rbp的值
+切换TLS中当前的g等于m.g0
+设置寄存器rsp等于g0.sched.sp, 使用g0的栈空间
+设置第一个参数为原来的g
+设置rdx寄存器为指向函数地址的指针(上下文)
+调用指定的函数, 不会返回
+ */
 func mcall(fn func(*g))
 
 // systemstack runs fn on a system stack.
@@ -171,7 +182,7 @@ func noescape(p unsafe.Pointer) unsafe.Pointer {
 }
 
 func cgocallback(fn, frame unsafe.Pointer, framesize, ctxt uintptr)
-func gogo(buf *gobuf)
+func gogo(buf *gobuf)  // 汇编实现
 func gosave(buf *gobuf)
 
 //go:noescape
@@ -284,8 +295,8 @@ func getclosureptr() uintptr
 //go:noescape
 func asmcgocall(fn, arg unsafe.Pointer) int32
 
-func morestack()
-func morestack_noctxt() // 汇编实现
+func morestack()  // 汇编实现  todo (栈扩张底层函数) 函数会保存G的状态到g.sched, 切换到g0和g0的栈空间, 然后调用 newstack() 函数
+func morestack_noctxt() // 汇编实现  todo (栈扩张的入口函数)   morestack_noctxt()函数 清空rdx寄存器并调用 morestack()函数
 func rt0_go()  // todo 这个是 `go程序的入口点`     (有很多种平台的 汇编实现)
 
 // return0 is a stub used to return 0 from deferproc.

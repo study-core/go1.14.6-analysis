@@ -112,6 +112,11 @@ func paramoutheap(fn *Node) bool {
 
 // The result of walkstmt MUST be assigned back to n, e.g.
 // 	n.Left = walkstmt(n.Left)
+//
+//
+//
+// `walkstmt()` 的结果必须分配回n，例如
+//  n.Left = walkstmt（n.Left）
 func walkstmt(n *Node) *Node {
 	if n == nil {
 		return n

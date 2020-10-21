@@ -31,7 +31,7 @@ GLOBL runtime·mainPC(SB),RODATA,$8
 TEXT ·checkASM(SB), NOSPLIT, $0-1
 	MOVB $1, ret+0(FP)
 	RET
-
+// func gogo() 的汇编实现
 TEXT runtime·gogo(SB), NOSPLIT, $0-8
 	MOVD buf+0(FP), R0
 	MOVD gobuf_g(R0), g

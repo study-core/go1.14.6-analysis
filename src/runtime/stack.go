@@ -904,6 +904,18 @@ func round2(x int32) int32 {
 	return 1 << s
 }
 
+// todo 开辟新的栈空间
+//
+//  函数会 判断 g.stackguard0 等于 `stackPreempt`, 就知道这是抢占触发的, 这时会再检查一遍是否要抢占
+//
+//		如果M被锁定(函数的本地变量中有P), 则跳过这一次的抢占并调用gogo函数继续运行G
+//		如果M正在分配内存, 则跳过这一次的抢占并调用gogo函数继续运行G
+//		如果M设置了当前不能抢占, 则跳过这一次的抢占并调用gogo函数继续运行G
+//		如果M的状态不是运行中, 则跳过这一次的抢占并调用gogo函数继续运行G
+//		即使这一次抢占失败, 因为 g.preempt 等于true, runtime中的一些代码会重新设置 `stackPreempt` 以重试下一次的抢占.
+//		如果判断可以抢占, 则继续判断是否GC引起的, 如果是则对G的栈空间执行标记处理(扫描根对象)然后继续运行,
+//		如果不是GC引起的则调用 gopreempt_m()函数 完成抢占.
+//
 // Called from runtime·morestack when more stack is needed.
 // Allocate larger stack and relocate to new stack.
 // Stack growth is multiplicative, for constant amortized cost.

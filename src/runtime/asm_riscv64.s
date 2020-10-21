@@ -233,7 +233,7 @@ TEXT runtime·return0(SB), NOSPLIT, $0
 
 // restore state from Gobuf; longjmp
 
-// func gogo(buf *gobuf)
+// func gogo(buf *gobuf)            func gogo() 的汇编实现
 TEXT runtime·gogo(SB), NOSPLIT, $16-8
 	MOV	buf+0(FP), T0
 	MOV	gobuf_g(T0), g	// make sure g is not nil

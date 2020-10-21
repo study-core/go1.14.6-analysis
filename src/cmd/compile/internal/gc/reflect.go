@@ -17,6 +17,10 @@ import (
 	"sync"
 )
 
+/**
+给编译器用   各种语法
+ */
+
 type itabEntry struct {
 	t, itype *types.Type
 	lsym     *obj.LSym // symbol of the itab itself
@@ -239,7 +243,7 @@ func hmap(t *types.Type) *types.Type {
 // hiter builds a type representing an Hiter structure for the given map type.
 // Make sure this stays in sync with runtime/map.go.
 //
-// map 的迭代器
+// map 的迭代器  (给 编译 用)
 //
 // hiter 为给定的 Map 类型构建一个表示 hiter结构的类型
 //

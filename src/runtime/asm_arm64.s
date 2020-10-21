@@ -119,7 +119,7 @@ TEXT runtime·gosave(SB), NOSPLIT|NOFRAME, $0-8
 	CALL	runtime·badctxt(SB)
 	RET
 
-// void gogo(Gobuf*)
+// void gogo(Gobuf*)        func gogo() 的汇编实现
 // restore state from Gobuf; longjmp
 TEXT runtime·gogo(SB), NOSPLIT, $24-8
 	MOVD	buf+0(FP), R5
