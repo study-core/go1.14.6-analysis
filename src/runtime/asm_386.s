@@ -1316,7 +1316,7 @@ TEXT ·checkASM(SB),NOSPLIT,$0-1
 	TESTL	$15, AX
 	SETEQ	ret+0(FP)
 	RET
-
+// func return0() 的汇编实现
 TEXT runtime·return0(SB), NOSPLIT, $0
 	MOVL	$0, AX
 	RET

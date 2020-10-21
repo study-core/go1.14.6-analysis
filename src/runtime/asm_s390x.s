@@ -695,6 +695,8 @@ droppedm:
 	// Done!
 	RET
 
+// func setg() 的汇编实现
+//
 // void setg(G*); set g. for use by needm.
 TEXT runtime·setg(SB), NOSPLIT, $0-8
 	MOVD	gg+0(FP), g
@@ -748,7 +750,7 @@ TEXT runtime·memhash32(SB),NOSPLIT|NOFRAME,$0-24
 	JMP	runtime·memhash32Fallback(SB)
 TEXT runtime·memhash64(SB),NOSPLIT|NOFRAME,$0-24
 	JMP	runtime·memhash64Fallback(SB)
-
+// func return0() 的汇编实现
 TEXT runtime·return0(SB), NOSPLIT, $0
 	MOVW	$0, R3
 	RET

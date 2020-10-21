@@ -77,7 +77,7 @@ nocgo:
 
 DATA	runtime·mainPC+0(SB)/8,$runtime·main(SB)
 GLOBL	runtime·mainPC(SB),RODATA,$8
-
+// func breakpoint() 的汇编实现
 TEXT runtime·breakpoint(SB),NOSPLIT|NOFRAME,$0-0
 	MOVV	R0, 2(R0) // TODO: TD
 	RET
@@ -618,7 +618,7 @@ TEXT runtime·memhash32(SB),NOSPLIT|NOFRAME,$0-24
 	JMP	runtime·memhash32Fallback(SB)
 TEXT runtime·memhash64(SB),NOSPLIT|NOFRAME,$0-24
 	JMP	runtime·memhash64Fallback(SB)
-
+// func return0() 的汇编实现
 TEXT runtime·return0(SB), NOSPLIT, $0
 	MOVW	$0, R1
 	RET

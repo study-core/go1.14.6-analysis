@@ -597,7 +597,7 @@ func deferreturn(arg0 uintptr) {
 	fn := d.fn
 	d.fn = nil
 	gp._defer = d.link
-	freedefer(d)
+	freedefer(d) // 释放 defer 实例
 	// If the defer function pointer is nil, force the seg fault to happen
 	// here rather than in jmpdefer. gentraceback() throws an error if it is
 	// called with a callback on an LR architecture and jmpdefer is on the

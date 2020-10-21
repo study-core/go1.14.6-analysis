@@ -111,7 +111,7 @@ DATA _rt0_arm_lib_argv<>(SB)/4,$0
 GLOBL _rt0_arm_lib_argv<>(SB),NOPTR,$4
 
 // using NOFRAME means do not save LR on stack.
-// argc is in R0, argv is in R1.
+// argc is in R0, argv is in R1.         func rt0_go() 的汇编实现
 TEXT runtime·rt0_go(SB),NOSPLIT|NOFRAME,$0
 	MOVW	$0xcafebabe, R12
 
@@ -181,7 +181,7 @@ TEXT runtime·rt0_go(SB),NOSPLIT|NOFRAME,$0
 
 DATA	runtime·mainPC+0(SB)/4,$runtime·main(SB)
 GLOBL	runtime·mainPC(SB),RODATA,$4
-
+// func breakpoint() 的汇编实现
 TEXT runtime·breakpoint(SB),NOSPLIT,$0-0
 	// gdb won't skip this breakpoint instruction automatically,
 	// so you must manually "set $pc+=4" to skip it and continue.
@@ -818,7 +818,7 @@ TEXT runtime·memhash32(SB),NOSPLIT|NOFRAME,$0-12
 	JMP	runtime·memhash32Fallback(SB)
 TEXT runtime·memhash64(SB),NOSPLIT|NOFRAME,$0-12
 	JMP	runtime·memhash64Fallback(SB)
-
+// func return0() 的汇编实现
 TEXT runtime·return0(SB),NOSPLIT,$0
 	MOVW	$0, R0
 	RET

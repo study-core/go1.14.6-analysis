@@ -88,7 +88,7 @@ DATA _rt0_amd64_lib_argc<>(SB)/8, $0
 GLOBL _rt0_amd64_lib_argc<>(SB),NOPTR, $8
 DATA _rt0_amd64_lib_argv<>(SB)/8, $0
 GLOBL _rt0_amd64_lib_argv<>(SB),NOPTR, $8
-
+// func rt0_go() 的汇编实现
 TEXT runtime·rt0_go(SB),NOSPLIT,$0
 	// copy arguments forward on an even stack
 	MOVQ	DI, AX		// argc
@@ -239,7 +239,7 @@ ok:
 
 DATA	runtime·mainPC+0(SB)/8,$runtime·main(SB)
 GLOBL	runtime·mainPC(SB),RODATA,$8
-
+// func breakpoint() 的汇编实现
 TEXT runtime·breakpoint(SB),NOSPLIT,$0-0
 	BYTE	$0xcc
 	RET
@@ -834,7 +834,7 @@ havem:
 	// Done!
 	RET
 
-// func setg(gg *g)
+// func setg(gg *g) 的汇编实现
 // set g. for use by needm.
 TEXT runtime·setg(SB), NOSPLIT, $0-8
 	MOVQ	gg+0(FP), BX
@@ -1356,7 +1356,7 @@ DATA shifts<>+0xe8(SB)/8, $0xffff0f0e0d0c0b0a
 DATA shifts<>+0xf0(SB)/8, $0x0807060504030201
 DATA shifts<>+0xf8(SB)/8, $0xff0f0e0d0c0b0a09
 GLOBL shifts<>(SB),RODATA,$256
-
+// func return0() 的汇编实现
 TEXT runtime·return0(SB), NOSPLIT, $0
 	MOVL	$0, AX
 	RET

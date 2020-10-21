@@ -458,7 +458,7 @@ type stack struct {
 }
 
 // todo G 的定义
-type g struct {
+type g struct {	// todo G 中有 M
 	// Stack parameters.
 	// stack describes the actual stack memory: [stack.lo, stack.hi).
 	// stackguard0 is the stack pointer compared in the Go stack growth prologue.
@@ -471,9 +471,9 @@ type g struct {
 	// g 使用的 栈空间 (lo - hi)
 	stack       stack   // offset known to runtime/cgo
 
+	// todo G 中的两个重要的 栈空间
 	// 检查栈空间是否足够的值, 低于这个值会扩张栈, 0 是 go代码使用的
 	stackguard0 uintptr // offset known to liblink
-
 	// 检查栈空间是否足够的值, 低于这个值会扩张栈, 1 是 原生代码使用的 (系统调用使用)
 	stackguard1 uintptr // offset known to liblink
 
@@ -485,7 +485,7 @@ type g struct {
 	// 运行当前 G 被用到的 M  todo G 里面 有 M
 	m            *m      // current m; offset known to arm liblink
 
-	// g 的调度数据, 当g中断时会保存当前的pc和rsp等值到这里, 恢复运行时会使用这里的值
+	// g 的调度数据, 当g中断时会保存当前的 pc 和 rsp 等值到这里, 恢复运行时会使用这里的值
 	sched        gobuf
 	syscallsp    uintptr        // if status==Gsyscall, syscallsp = sched.sp to use during gc
 	syscallpc    uintptr        // if status==Gsyscall, syscallpc = sched.pc to use during gc
@@ -563,9 +563,16 @@ type m struct {  // todo M 里面 有 P 和 G
 	// 用于调度的特殊g, `调度` 和 `执行系统调用` 时会切换到这个g 【系统G】
 	//
 	// 每个M启动都有一个叫 g0 的系统堆栈，
-	// 		runtime通常使用systemstack、mcall或asmcgocall临时切换到系统堆栈，以执行必须不被抢占的任务、不得增加用户堆栈的任务或切换用户goroutines。
+	// 		runtime通常使用systemstack、mcall 或asmcgocall 临时切换到系统堆栈，以执行必须不被抢占的任务、不得增加用户堆栈的任务或切换用户goroutines
 	// 		在系统堆栈上运行的代码 【隐式不可抢占】，【垃圾收集器不扫描系统堆栈】。
 	// 		在系统堆栈上运行时，不会使用当前用户堆栈执行。
+	//
+	// g0 是仅用于 【负责调度】 的G, g0  不指向任何可执行的函数, 每个m都会有一个自己的g0,
+	//    在 【调度】 或 【系统调用】 时会使用g0的栈空间, 【全局变量的g0】 是m0的g0  (m0 是 main 线程)
+	//
+	// m0 是启动程序后的主线程,   这个m对应的实例会在 全局变量m0中, 不需要在heap上分配,
+	//    m0负责执行  初始化操作  和  启动第一个g, 在之后m0就和其他的m一样了.
+	//
 	//
 	g0      *g     // goroutine with scheduling stack
 	morebuf gobuf  // gobuf arg to morestack
@@ -576,17 +583,32 @@ type m struct {  // todo M 里面 有 P 和 G
 	gsignal       *g           // signal-handling g
 	goSigStack    gsignalStack // Go-allocated signal handling stack
 	sigmask       sigset       // storage for saved signal mask
+
+	// todo 很重要的
+	// 线程本地存储（用于x86 extern寄存器）
+	//
+	// TLS 的全称是Thread-local storage, 代表每个线程的中的本地数据.
+	//   	例如标准c中的errno就是一个典型的TLS变量, 每个线程都有一个独自的errno, 写入它不会干扰到其他线程中的值.
+	//   	go在实现协程时非常依赖TLS机制, 会用于获取系统线程中当前的G和G所属的M的实例.
+	//
+	//   	因为go并不使用glibc, 操作TLS会使用系统原生的接口, 以linux x64为例,
+	//   	go在新建M时会调用arch_prctl这个syscall设置FS寄存器的值为M.tls的地址,
+	//   	运行中每个M的FS寄存器都会指向它们对应的M实例的tls, linux内核调度线程时FS寄存器会跟着线程一起切换,
+	//   	这样go代码只需要访问FS寄存器就可以存取线程本地的数据.
+	//
 	tls           [6]uintptr   // thread-local storage (for x86 extern register)
+
+	// todo 很重要的 一个函数指针变量
 	mstartfn      func()
 
-	// 当前 M 正在运行的 g
+	// todo 当前 M 正在运行的 g
 	curg          *g       // current running goroutine
 	caughtsig     guintptr // goroutine running during fatal signal
 
 	// 当前 M 正在拥有的 P (当 M使用G执行 `系统调用`  或者 M 处于空闲时, p的值为 `nil`)
 	p             puintptr // attached p for executing go code (nil if not executing go code)
 
-	// 指向 下一个 潜在关联性的 P 地址 (当 M 被从新启用时, 游仙区尝试和 这个 P 关联)
+	// 指向 下一个 潜在关联性的 P 地址 (当 M 被 重新启用时, 会先去尝试和 这个 P 关联)
 	nextp         puintptr
 	oldp          puintptr // the p that was attached before executing a syscall
 	id            int64
@@ -668,7 +690,7 @@ type m struct {  // todo M 里面 有 P 和 G
 }
 
 // todo P 的定义
-type p struct {
+type p struct {  // todo P 中有 M
 	id          int32
 
 	// P 的状态枚举值 (参照 P 状态自枚举定义)

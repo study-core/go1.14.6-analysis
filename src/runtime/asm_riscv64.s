@@ -6,7 +6,7 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-// func rt0_go()
+// func rt0_go() 的汇编实现
 TEXT runtime·rt0_go(SB),NOSPLIT,$0
 	// X2 = stack; A0 = argc; A1 = argv
 
@@ -226,7 +226,7 @@ TEXT runtime·memhash32(SB),NOSPLIT|NOFRAME,$0-24
 TEXT runtime·memhash64(SB),NOSPLIT|NOFRAME,$0-24
 	JMP	runtime·memhash64Fallback(SB)
 
-// func return0()
+// func return0() 的汇编实现
 TEXT runtime·return0(SB), NOSPLIT, $0
 	MOV	$0, A0
 	RET
@@ -456,7 +456,7 @@ TEXT runtime·goexit(SB),NOSPLIT|NOFRAME,$0-0
 TEXT ·cgocallback_gofunc(SB),NOSPLIT,$24-32
 	// TODO(jsing): Add support for cgo - issue #36641.
 	WORD $0		// crash
-
+// func breakpoint() 的汇编实现
 TEXT runtime·breakpoint(SB),NOSPLIT|NOFRAME,$0-0
 	EBREAK
 	RET

@@ -175,7 +175,7 @@ func gogo(buf *gobuf)
 func gosave(buf *gobuf)
 
 //go:noescape
-func jmpdefer(fv *funcval, argp uintptr)
+func jmpdefer(fv *funcval, argp uintptr)  // 汇编实现
 func asminit()
 func setg(gg *g)
 func breakpoint()
@@ -285,14 +285,18 @@ func getclosureptr() uintptr
 func asmcgocall(fn, arg unsafe.Pointer) int32
 
 func morestack()
-func morestack_noctxt()
-func rt0_go()  // todo 这个是 `go程序的入口点`
+func morestack_noctxt() // 汇编实现
+func rt0_go()  // todo 这个是 `go程序的入口点`     (有很多种平台的 汇编实现)
 
 // return0 is a stub used to return 0 from deferproc.
 // It is called at the very end of deferproc to signal
 // the calling Go function that it should not jump
 // to deferreturn.
 // in asm_*.s
+//
+//
+//
+// 在 deferproc() 的最后被调用，以向调用 Go函数 发出信号，告知它不应跳转到 deferreturn() .  在 asm_*.s 中实现     (其实在 deferStack() 中最后也被调用)
 func return0()
 
 // in asm_*.s

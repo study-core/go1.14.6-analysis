@@ -6,7 +6,7 @@
 #include "go_tls.h"
 #include "funcdata.h"
 #include "textflag.h"
-
+// func rt0_go() 的汇编实现
 TEXT runtime·rt0_go(SB), NOSPLIT|NOFRAME, $0
 	// save m->g0 = g0
 	MOVD $runtime·g0(SB), runtime·m0+m_g0(SB)
@@ -185,7 +185,7 @@ TEXT runtime·memhash32(SB),NOSPLIT|NOFRAME,$0-24
 	JMP	runtime·memhash32Fallback(SB)
 TEXT runtime·memhash64(SB),NOSPLIT|NOFRAME,$0-24
 	JMP	runtime·memhash64Fallback(SB)
-
+// func return0() 的汇编实现
 TEXT runtime·return0(SB), NOSPLIT, $0-0
 	MOVD $0, RET0
 	RET
@@ -228,7 +228,7 @@ TEXT ·publicationBarrier(SB), NOSPLIT, $0-0
 
 TEXT runtime·procyield(SB), NOSPLIT, $0-0 // FIXME
 	RET
-
+// func breakpoint() 的汇编实现
 TEXT runtime·breakpoint(SB), NOSPLIT, $0-0
 	UNDEF
 

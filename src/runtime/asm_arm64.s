@@ -7,7 +7,7 @@
 #include "tls_arm64.h"
 #include "funcdata.h"
 #include "textflag.h"
-
+// func rt0_go() 的汇编实现
 TEXT runtime·rt0_go(SB),NOSPLIT,$0
 	// SP = stack; R0 = argc; R1 = argv
 
@@ -89,7 +89,7 @@ nocgo:
 
 DATA	runtime·mainPC+0(SB)/8,$runtime·main(SB)
 GLOBL	runtime·mainPC(SB),RODATA,$8
-
+// func breakpoint() 的汇编实现
 TEXT runtime·breakpoint(SB),NOSPLIT|NOFRAME,$0-0
 	BRK
 	RET
@@ -1137,7 +1137,7 @@ TEXT runtime·abort(SB),NOSPLIT|NOFRAME,$0-0
 	MOVD	ZR, R0
 	MOVD	(R0), R0
 	UNDEF
-
+// func return0() 的汇编实现
 TEXT runtime·return0(SB), NOSPLIT, $0
 	MOVW	$0, R0
 	RET

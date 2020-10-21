@@ -97,6 +97,7 @@ var main_inittask initTask
 // it is closed, meaning cgocallbackg can reliably receive from it.
 var main_init_done chan bool
 
+// main.main()函数入口  main.main()入口
 //go:linkname main_main main.main
 func main_main()
 
@@ -110,7 +111,7 @@ var runtimeInitTime int64
 var initSigmask sigset
 
 
-// TODO 提供给 G 调用的 main 函数    (参考 runtime.schedinit() )
+// TODO 提供给 G 调用的 main 函数    (参考 runtime.schedinit() )   runtime.main的入口
 //
 //
 // The main goroutine.
@@ -135,7 +136,7 @@ func main() {
 
 	if GOARCH != "wasm" { // no threads on wasm yet, so no sysmon
 		systemstack(func() {
-			newm(sysmon, nil)
+			newm(sysmon, nil)  // 启动一个新的M执行 `sysmon()` 函数, todo 这个函数会监控全局的状态并对运行时间过长的G进行抢占
 		})
 	}
 
@@ -151,6 +152,7 @@ func main() {
 		throw("runtime.main not on m0")
 	}
 
+	// 调用 runtime.init函数   runtime_init函数
 	doInit(&runtime_inittask) // must be before defer
 	if nanotime() == 0 {
 		throw("nanotime returning zero")
@@ -191,6 +193,7 @@ func main() {
 		cgocall(_cgo_notify_runtime_init_done, nil)
 	}
 
+	// 调用main.main函数
 	doInit(&main_inittask)
 
 	close(main_init_done)
@@ -203,12 +206,16 @@ func main() {
 		// has a main, but it is not executed.
 		return
 	}
+
+	// 进行间接调用，因为链接器在放置运行时时不知道主包的地址
 	fn := main_main // make an indirect call, as the linker doesn't know the address of the main package when laying down the runtime
-	fn()
+	fn()  // 调用 main.main() 函数
 	if raceenabled {
 		racefini()
 	}
 
+	// 如果当前发生了panic, 则等待panic处理
+	//
 	// Make racy client program work: if panicking on
 	// another goroutine at the same time as main returns,
 	// let the other goroutine finish printing the panic trace.
@@ -226,6 +233,7 @@ func main() {
 		gopark(nil, nil, waitReasonPanicWait, traceEvGoStop, 1)
 	}
 
+	// 调用exit(0)退出程序
 	exit(0)
 	for {
 		var x *int32
@@ -1203,6 +1211,14 @@ func startTheWorldWithSema(emitTraceEvent bool) int64 {
 // May run during STW (because it doesn't have a P yet), so write
 // barriers are not allowed.
 //
+//
+// `mstart()` 是 新 Ms 的入口点
+//
+//  这不能拆分堆栈，因为我们甚至可能 尚未 设置堆栈边界
+//
+//   可能在STW期间运行 (因为它还没有P) 因此不允许写障碍
+//
+//
 //go:nosplit
 //go:nowritebarrierrec
 func mstart() {
@@ -1256,8 +1272,10 @@ func mstart1() {
 
 	// Install signal handlers; after minit so that minit can
 	// prepare the thread to be able to handle the signals.
+	//
+	// 安装信号处理程序; `minit()` 之后，以便 `minit()` 可以准备线程以处理信号
 	if _g_.m == &m0 {
-		mstartm0()
+		mstartm0()  //运行全局的 m0
 	}
 
 	if fn := _g_.m.mstartfn; fn != nil {
@@ -1268,13 +1286,20 @@ func mstart1() {
 		acquirep(_g_.m.nextp.ptr())
 		_g_.m.nextp = 0
 	}
-	schedule()
+	schedule()   // 发起 【一轮调度程序】：找到一个可运行的goroutine并执行它
 }
 
 // mstartm0 implements part of mstart1 that only runs on the m0.
 //
 // Write barriers are allowed here because we know the GC can't be
 // running yet, so they'll be no-ops.
+//
+// todo 运行全局的 m0
+//
+// `mstartm0()` 实现 `mstart1()` 的一部分，该部分仅在 m0 上运行
+//
+//  这里允许写屏障，因为我们知道GC尚未运行，因此它们将成为无操作
+//
 //
 //go:yeswritebarrierrec
 func mstartm0() {
@@ -2665,6 +2690,11 @@ func injectglist(glist *gList) {
 
 // One round of scheduler: find a runnable goroutine and execute it.
 // Never returns.
+//
+//
+// go中有名的 todo 【一轮调度程序】：找到一个可运行的goroutine并执行它
+//
+// 永不返回
 func schedule() {
 	_g_ := getg()
 
@@ -3896,6 +3926,8 @@ func saveAncestors(callergp *g) *[]ancestorInfo {
 	return ancestorsp
 }
 
+// 将 自由G 放入 P 的 gFree
+//
 // Put on gfree list.
 // If local list is too long, transfer a batch to the global list.
 func gfput(_p_ *p, gp *g) {
@@ -3998,7 +4030,7 @@ func gfpurge(_p_ *p) {
 	unlock(&sched.gFree.lock)
 }
 
-// Breakpoint executes a breakpoint trap.
+// Breakpoint executes a breakpoint trap.    `Breakpoint()` 执行断点陷阱
 func Breakpoint() {
 	breakpoint()
 }
@@ -4839,6 +4871,8 @@ var forcegcperiod int64 = 2 * 60 * 1e9     // todo 定时 gc 的间隔  2分钟
 
 // todo 抢占函数  【超级重要】
 //
+// 				todo		这个函数会监控全局的状态并对运行时间过长的G进行抢占
+//
 // runtime.main会创建一个额外的M运行sysmon函数, 抢占就是在sysmon中实现的
 // Always runs without a P, so write barriers are not allowed.
 //
@@ -4853,7 +4887,7 @@ func sysmon() {
 	idle := 0 // how many cycles in succession we had not wokeup somebody
 	delay := uint32(0)
 
-	// sysmon 会进入一个无限循环, 第一轮回休眠20us, 之后每次休眠时间倍增, 最终每一轮都会休眠10ms.
+	// todo sysmon 会进入一个无限循环, 第一轮回休眠20us, 之后每次休眠时间倍增, 最终每一轮都会休眠10ms.
 	for {
 		if idle == 0 { // start with 20us sleep...
 			delay = 20
@@ -5876,6 +5910,8 @@ type initTask struct {
 	// followed by nfns pcs, one per init function to run
 }
 
+
+// runtime.init函数   runtime_init函数  main.init函数  的通用抽象函数
 func doInit(t *initTask) {
 	switch t.state {
 	case 2: // fully initialized

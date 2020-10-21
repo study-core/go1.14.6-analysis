@@ -10,7 +10,7 @@
 #include "textflag.h"
 
 #define	REGCTXT	R22
-
+// func rt0_go() 的汇编实现
 TEXT runtime·rt0_go(SB),NOSPLIT,$0
 	// R29 = stack; R4 = argc; R5 = argv
 
@@ -78,7 +78,7 @@ nocgo:
 
 DATA	runtime·mainPC+0(SB)/4,$runtime·main(SB)
 GLOBL	runtime·mainPC(SB),RODATA,$4
-
+// func breakpoint() 的汇编实现
 TEXT runtime·breakpoint(SB),NOSPLIT,$0-0
 	BREAK
 	RET
@@ -620,7 +620,7 @@ TEXT runtime·memhash32(SB),NOSPLIT|NOFRAME,$0-12
 	JMP	runtime·memhash32Fallback(SB)
 TEXT runtime·memhash64(SB),NOSPLIT|NOFRAME,$0-12
 	JMP	runtime·memhash64Fallback(SB)
-
+// func return0() 的汇编实现
 TEXT runtime·return0(SB),NOSPLIT,$0
 	MOVW	$0, R1
 	RET

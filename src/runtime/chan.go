@@ -129,6 +129,11 @@ func chanbuf(c *hchan, i uint) unsafe.Pointer {
 }
 
 // entry point for c <- x from compiled code
+//
+//编译代码中 c <-x 的入口点
+//
+// 往 chan 中 发送数据 的函数实现
+//
 //go:nosplit
 func chansend1(c *hchan, elem unsafe.Pointer) {
 	chansend(c, elem, true, getcallerpc())
@@ -145,8 +150,13 @@ func chansend1(c *hchan, elem unsafe.Pointer) {
  * when a channel involved in the sleep has
  * been closed.  it is easiest to loop and re-run
  * the operation; we'll see that it's now closed.
+ *
+ * 往 chan 中 发送数据 的函数实现
+ *
  */
 func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
+
+	// 先判断 chan 是否为 nil
 	if c == nil {
 		if !block {
 			return false
@@ -409,6 +419,11 @@ func closechan(c *hchan) {
 }
 
 // entry points for <- c from compiled code
+//
+// 编译代码中  <- c 的 入口点
+//
+// 从 chan 中接收数据 的函数实现
+//
 //go:nosplit
 func chanrecv1(c *hchan, elem unsafe.Pointer) {
 	chanrecv(c, elem, true)
@@ -420,6 +435,9 @@ func chanrecv2(c *hchan, elem unsafe.Pointer) (received bool) {
 	return
 }
 
+//
+// 从 chan 中接收数据 的函数实现
+//
 // chanrecv receives on channel c and writes the received data to ep.
 // ep may be nil, in which case received data is ignored.
 // If block == false and no elements are available, returns (false, false).
@@ -434,11 +452,12 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 		print("chanrecv: chan=", c, "\n")
 	}
 
+	// 先判断 chan 是否为 nil
 	if c == nil {
 		if !block {
 			return
 		}
-		gopark(nil, nil, waitReasonChanReceiveNilChan, traceEvGoStop, 2)
+		gopark(nil, nil, waitReasonChanReceiveNilChan, traceEvGoStop, 2)  // 挂起 当前G
 		throw("unreachable")
 	}
 
