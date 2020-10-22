@@ -431,7 +431,7 @@ TEXT runtime·morestack_noctxt(SB),NOSPLIT|NOFRAME,$0-0
 	B.HI	3(PC);			\
 	MOVW	$NAME(SB), R1;		\
 	B	(R1)
-
+// func reflectcall() 延迟调用函数的实现
 TEXT ·reflectcall(SB),NOSPLIT|NOFRAME,$0-20
 	MOVW	argsize+12(FP), R0
 	DISPATCH(runtime·call16, 16)

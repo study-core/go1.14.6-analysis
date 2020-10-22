@@ -298,7 +298,7 @@ TEXT ·cgocallback_gofunc(SB), NOSPLIT, $16-32
 	If; \
 		JMP NAME(SB); \
 	End
-
+// func reflectcall() 延迟调用函数的实现
 TEXT ·reflectcall(SB), NOSPLIT, $0-32
 	I64Load fn+8(FP)
 	I64Eqz

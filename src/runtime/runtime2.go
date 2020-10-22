@@ -1171,6 +1171,9 @@ type _defer struct {
 	framepc uintptr
 }
 
+
+// todo panic 关键字的实现
+//
 // A _panic holds information about an active panic.
 //
 // This is marked go:notinheap because _panic values must only ever
@@ -1183,14 +1186,21 @@ type _defer struct {
 //
 //go:notinheap
 type _panic struct {
-	argp      unsafe.Pointer // pointer to arguments of deferred call run during panic; cannot move - known to liblink
+	// 指向 defer 调用时参数的指针
+	argp      unsafe.Pointer // pointer to arguments of deferred call run during panic; cannot move - known to liblink   指向在紧急情况下运行的延迟调用参数的指针； 无法移动-已知为liblink
+	// 调用 panic 时传入的参数
 	arg       interface{}    // argument to panic
+	// 	指向了更早调用的 runtime._panic 结构
 	link      *_panic        // link to earlier panic
-	pc        uintptr        // where to return to in runtime if this panic is bypassed
-	sp        unsafe.Pointer // where to return to in runtime if this panic is bypassed
-	recovered bool           // whether this panic is over
-	aborted   bool           // the panic was aborted
+	pc        uintptr        // where to return to in runtime if this panic is bypassed     	如果忽略了此紧急情况，将在运行时返回哪里
+	sp        unsafe.Pointer // where to return to in runtime if this panic is bypassed			如果忽略了此紧急情况，将在运行时返回哪里
+	recovered bool           // whether this panic is over										panic是否结束
+	aborted   bool           // the panic was aborted											恐慌中止了
 	goexit    bool
+
+	// pc、sp 和 goexit 三个字段都是为了修复 `runtime.Goexit()` 的问题引入的
+	// 		`runtime.Goexit()` 函数能够 只结束调用该函数的 Goroutine 而 不影响其他的 Goroutine，
+	// 		但是该函数会被 defer 中的 panic 和 recover 取消，引入这三个字段的目的就是为了解决这个问题.
 }
 
 // stack traces

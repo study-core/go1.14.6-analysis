@@ -171,6 +171,10 @@ func sync_fastrand() uint32 { return fastrand() }
 //go:noescape
 func memequal(a, b unsafe.Pointer, size uintptr) bool
 
+// noescape 从转义分析中隐藏一个指针. noescape是标识函数，但是转义分析不认为输出取决于输入. noescape已内联，当前可编译为零指令.
+//
+// 小心使用!
+//
 // noescape hides a pointer from escape analysis.  noescape is
 // the identity function but escape analysis doesn't think the
 // output depends on the input.  noescape is inlined and currently
@@ -203,9 +207,9 @@ func breakpoint()
 // site for justification.
 //
 // Package reflect accesses this symbol through a linkname.
-func reflectcall(argtype *_type, fn, arg unsafe.Pointer, argsize uint32, retoffset uint32)
+func reflectcall(argtype *_type, fn, arg unsafe.Pointer, argsize uint32, retoffset uint32)  // 跨平台汇编实现,  延迟调用
 
-// 跨平台汇编实现,当前g的自旋
+// 跨平台汇编实现, 当前 g 的自旋
 func procyield(cycles uint32)
 
 type neverCallThisFunction struct{}

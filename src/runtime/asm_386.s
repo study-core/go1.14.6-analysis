@@ -492,7 +492,7 @@ TEXT runtime·morestack_noctxt(SB),NOSPLIT,$0-0
 	MOVL	$NAME(SB), AX;		\
 	JMP	AX
 // Note: can't just "JMP NAME(SB)" - bad inlining results.
-
+// func reflectcall() 延迟调用函数的实现
 TEXT ·reflectcall(SB), NOSPLIT, $0-20
 	MOVL	argsize+12(FP), CX
 	DISPATCH(runtime·call16, 16)

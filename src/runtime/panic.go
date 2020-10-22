@@ -923,7 +923,7 @@ func reflectcallSave(p *_panic, fn, arg unsafe.Pointer, argsize uint32) {
 	}
 }
 
-// The implementation of the predeclared function panic.
+// The implementation of the predeclared function panic.  todo  预定义函数 panic() 的实现
 func gopanic(e interface{}) {
 	gp := getg()
 	if gp.m.curg != gp {
@@ -955,6 +955,7 @@ func gopanic(e interface{}) {
 		throw("panic holding locks")
 	}
 
+	// 创建新的 runtime._panic 结构并添加到所在 Goroutine _panic 链表的最前面
 	var p _panic
 	p.arg = e
 	p.link = gp._panic
@@ -966,6 +967,8 @@ func gopanic(e interface{}) {
 	// gopanic frame (stack scanning is slow...)
 	addOneOpenDeferFrame(gp, getcallerpc(), unsafe.Pointer(getcallersp()))
 
+
+	// 在循环中不断从当前 Goroutine 的 _defer 中链表获取 runtime._defer 并调用 runtime.reflectcall() 运行延迟调用函数
 	for {
 		d := gp._defer
 		if d == nil {
@@ -1030,6 +1033,8 @@ func gopanic(e interface{}) {
 			gp._defer = d.link
 			freedefer(d)
 		}
+
+		// 恢复程序的 recover 分支中的代码
 		if p.recovered {
 			gp._panic = p.link
 			if gp._panic != nil && gp._panic.goexit && gp._panic.aborted {
@@ -1085,6 +1090,9 @@ func gopanic(e interface{}) {
 			if gp._panic == nil { // must be done with signal
 				gp.sig = 0
 			}
+
+			// 它从 runtime._defer 结构体中取出了程序计数器 pc 和栈指针 sp 并调用 runtime.recovery 函数触发 Goroutine 的调度，调度之前会准备好 sp、pc 以及函数的返回值
+
 			// Pass information about recovering frame to recovery.
 			gp.sigcode0 = uintptr(sp)
 			gp.sigcode1 = pc
@@ -1099,8 +1107,9 @@ func gopanic(e interface{}) {
 	// and String methods to prepare the panic strings before startpanic.
 	preprintpanics(gp._panic)
 
+	// 调用 runtime.fatalpanic 中止整个程序
 	fatalpanic(gp._panic) // should not return
-	*(*int)(nil) = 0      // not reached
+	*(*int)(nil) = 0      // not reached   还没到 ??
 }
 
 // getargp returns the location where the caller
@@ -1112,12 +1121,17 @@ func getargp(x int) uintptr {
 	return uintptr(noescape(unsafe.Pointer(&x)))
 }
 
-// The implementation of the predeclared function recover.
+// The implementation of the predeclared function recover.   todo  预定义函数 recover() 的实现
 // Cannot split the stack because it needs to reliably
 // find the stack segment of its caller.
 //
 // TODO(rsc): Once we commit to CopyStackAlways,
 // this doesn't need to be nosplit.
+//
+// 当前 Goroutine 没有调用 panic，那么该函数会直接返回 nil，这也是崩溃恢复在非 defer 中调用会失效的原因。
+//
+//       在正常情况下，它会修改 runtime._panic 结构体的 recovered 字段，runtime.gorecover 函数本身不包含恢复程序的逻辑，程序的恢复也是由 runtime.gopanic 函数负责的.
+//
 //go:nosplit
 func gorecover(argp uintptr) interface{} {
 	// Must be in a function running as part of a deferred call during the panic.
@@ -1223,6 +1237,11 @@ func fatalthrow() {
 // that if msgs != nil, fatalpanic also prints panic messages and decrements
 // runningPanicDefers once main is blocked from exiting.
 //
+// fatalpanic() 实现了无法恢复的 panic.
+// 				就像致命的致命一击，除了 如果 msgs != nil，致命的也会在 主线程被阻止退出时打印紧急消息 并减少 runningPanicDefers
+//
+// 实现了无法被恢复的程序崩溃，它在中止程序之前会通过 runtime.printpanics() 打印出全部的 panic 消息以及调用时传入的参数
+//
 //go:nosplit
 func fatalpanic(msgs *_panic) {
 	pc := getcallerpc()
@@ -1241,7 +1260,7 @@ func fatalpanic(msgs *_panic) {
 			// decrement runningPanicDefers.
 			atomic.Xadd(&runningPanicDefers, -1)
 
-			printpanics(msgs)
+			printpanics(msgs)  // 打印出全部的 panic 消息以及调用时传入的参数
 		}
 
 		docrash = dopanic_m(gp, pc, sp)
@@ -1255,7 +1274,7 @@ func fatalpanic(msgs *_panic) {
 	}
 
 	systemstack(func() {
-		exit(2)
+		exit(2) // 通过 runtime.exit 退出当前程序并返回错误码 2
 	})
 
 	*(*int)(nil) = 0 // not reached

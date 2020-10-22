@@ -371,7 +371,7 @@ TEXT runtime·morestack_noctxt(SB),NOSPLIT|NOFRAME,$0-0
 	MOVD	R12, CTR;		\
 	BR	(CTR)
 // Note: can't just "BR NAME(SB)" - bad inlining results.
-
+// func reflectcall() 延迟调用函数的实现
 TEXT ·reflectcall(SB), NOSPLIT|NOFRAME, $0-32
 	MOVWZ argsize+24(FP), R3
 	DISPATCH(runtime·call32, 32)

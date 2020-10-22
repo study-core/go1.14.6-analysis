@@ -291,7 +291,7 @@ TEXT runtime·morestack_noctxt(SB),NOSPLIT|NOFRAME,$0-0
 	MOVV	$NAME(SB), R4;	\
 	JMP	(R4)
 // Note: can't just "BR NAME(SB)" - bad inlining results.
-
+// func reflectcall() 延迟调用函数的实现
 TEXT ·reflectcall(SB), NOSPLIT|NOFRAME, $0-32
 	MOVWU argsize+24(FP), R1
 	DISPATCH(runtime·call32, 32)
