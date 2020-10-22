@@ -51,6 +51,7 @@
 //	混合写屏障可以让GC在并行标记结束后不需要重新扫描各个G的堆栈, 可以减少Mark Termination中的 STW 时间.
 //
 
+// todo  垃圾回收器通过 ` _GCoff`、`_GCMark` 和 `_GCMarktermination` 三个标记来确定  写屏障状态，这时写屏障的启动状态严格的在 _GCoff 到 _GCMark 到 _GCMarktermination 再到 _GCoff 的切换中进行变化
 
 //
 //
