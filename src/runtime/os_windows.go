@@ -145,11 +145,19 @@ func tstart_stdcall(newm *m)
 // Called by OS using stdcall ABI.
 func ctrlhandler()
 
+
+// todo 系统信号灯 实现
 type mOS struct {
+
+	// 保护“线程”并防止关闭
 	threadLock mutex   // protects "thread" and prevents closing
+
+	// 线程句柄
 	thread     uintptr // thread handle
 
+	// todo 停车位信号灯
 	waitsema   uintptr // semaphore for parking on locks
+	// 指示 暂停/恢复 的信号灯
 	resumesema uintptr // semaphore to indicate suspend/resume
 
 	// preemptExtLock synchronizes preemptM with entry/exit from

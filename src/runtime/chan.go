@@ -214,6 +214,7 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 
 	lock(&c.lock)
 
+	// 如果 chan 已经 close 则  send 会抛 panic
 	if c.closed != 0 {
 		unlock(&c.lock)
 		panic(plainError("send on closed channel"))
@@ -576,7 +577,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 		return true, false
 	}
 
-	// 检查channel.sendq中是否有等待中的 发送者的G
+	// 检查channel.sendq中是否有等待中的 发送者的G   todo 注意, 这里 可能 chan已经 close
 	if sg := c.sendq.dequeue(); sg != nil {
 		// Found a waiting sender. If buffer is size 0, receive value
 		// directly from sender. Otherwise, receive from head of queue
@@ -638,7 +639,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	//
 	// 在分配elem 和 将mysg入队到 gp.waitcopy 可以找到它的地方之间没有堆栈拆分
 
-	// 设置 sudog.elem = 指向接收内存的指针
+	// 设置 sudog.elem = 指向接收内存的指针   todo  这里可能 拿到的是  chan 已经 close 的 elem, 所以 可能为 nil
 	mysg.elem = ep
 	mysg.waitlink = nil
 	// 设置 g.waiting = sudog

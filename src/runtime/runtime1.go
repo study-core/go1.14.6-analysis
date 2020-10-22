@@ -446,7 +446,7 @@ func timediv(v int64, div int32, rem *int32) int32 {
 
 // Helpers for Go. Must be NOSPLIT, must only call NOSPLIT functions, and must not block.
 
-// 阻塞当前 G 被抢占
+// 阻塞当前 G 被抢占   (且返回当前G 的 M)
 //go:nosplit
 func acquirem() *m {
 	_g_ := getg()
@@ -459,8 +459,10 @@ func acquirem() *m {
 func releasem(mp *m) {
 	_g_ := getg()
 	mp.locks--			// 递减掉 M 上的 g 的 抢占计数
+
+	// 如果 当前G 被抢占时, 该值会被赋予一个巨大的值 `stackPreempt`
 	if mp.locks == 0 && _g_.preempt {
-		// restore the preemption request in case we've cleared it in newstack
+		// restore the preemption request in case we've cleared it in newstack   恢复抢占请求，以防我们在 新堆栈中清除了它
 		_g_.stackguard0 = stackPreempt
 	}
 }

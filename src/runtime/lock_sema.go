@@ -32,12 +32,16 @@ const (
 	passive_spin    = 1
 )
 
+
+// 原语锁加锁
 func lock(l *mutex) {
+
+	// 获取当前 G
 	gp := getg()
 	if gp.m.locks < 0 {
 		throw("runtime·lock: lock count")
 	}
-	gp.m.locks++
+	gp.m.locks++   // 禁用M的抢占
 
 	// Speculative grab for lock.
 	if atomic.Casuintptr(&l.key, 0, locked) {
@@ -53,6 +57,8 @@ func lock(l *mutex) {
 	}
 Loop:
 	for i := 0; ; i++ {
+
+		// 给 lock.key 添加 锁标识
 		v := atomic.Loaduintptr(&l.key)
 		if v&locked == 0 {
 			// Unlocked. Try to lock.
@@ -70,18 +76,30 @@ Loop:
 			// l->waitm points to a linked list of M's waiting
 			// for this lock, chained through m->nextwaitm.
 			// Queue this M.
+			//
+			//
+			// 有人拥有它
+			// l->waitm 指向通过 m->nextwaitm 链接的M等待此锁的链接列表。
+			// 排队这个M
+			//
+			//
 			for {
+				// 清除 锁标识
 				gp.m.nextwaitm = muintptr(v &^ locked)
+
+				// 添加锁标志
 				if atomic.Casuintptr(&l.key, v, uintptr(unsafe.Pointer(gp.m))|locked) {
 					break
 				}
 				v = atomic.Loaduintptr(&l.key)
 				if v&locked == 0 {
-					continue Loop
+					continue Loop  // 锁标志 没加上,  继续尝试 添加锁标志
 				}
 			}
+
+			// 锁标志 加上了
 			if v&locked != 0 {
-				// Queued. Wait.
+				// Queued. Wait.    排队, 并等待
 				semasleep(-1)
 				i = 0
 			}
@@ -89,13 +107,22 @@ Loop:
 	}
 }
 
+// 原语锁释放锁
+//
 //go:nowritebarrier
 // We might not be holding a p in this code.
 func unlock(l *mutex) {
+
+	// 获取当前 G
 	gp := getg()
 	var mp *m
+
 	for {
+
+		// 获取 lock.key
 		v := atomic.Loaduintptr(&l.key)
+
+		// 清除锁标志
 		if v == locked {
 			if atomic.Casuintptr(&l.key, locked, 0) {
 				break
@@ -103,19 +130,23 @@ func unlock(l *mutex) {
 		} else {
 			// Other M's are waiting for the lock.
 			// Dequeue an M.
+			//
+			// 其他M正在等待锁定
+			// 使M出队
+			//
 			mp = muintptr(v &^ locked).ptr()
 			if atomic.Casuintptr(&l.key, v, uintptr(mp.nextwaitm)) {
-				// Dequeued an M.  Wake it.
+				// Dequeued an M.  Wake it.  使M出队, 并唤醒它
 				semawakeup(mp)
 				break
 			}
 		}
 	}
-	gp.m.locks--
+	gp.m.locks--   // 释放 M 抢占
 	if gp.m.locks < 0 {
 		throw("runtime·unlock: lock count")
 	}
-	if gp.m.locks == 0 && gp.preempt { // restore the preemption request in case we've cleared it in newstack
+	if gp.m.locks == 0 && gp.preempt { // restore the preemption request in case we've cleared it in newstack   恢复 G 的抢占请求，以防我们在新堆栈中清除了它
 		gp.stackguard0 = stackPreempt
 	}
 }

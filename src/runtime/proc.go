@@ -297,7 +297,7 @@ func goschedguarded() {
 // Reasons should be unique and descriptive.
 // Do not re-use reasons, add new ones.
 //
-// todo 将当前 G 进行休眠
+// todo 将当前 G 进行休眠    (其实是将 M 和 G 解除, 让 M 去运行其他 G)
 //
 // 将当前goroutine置于【等待状态】，并且调用 unlockf 函数。
 // 如果 `unlockf()` 返回false，则继续执行goroutine。
@@ -312,8 +312,8 @@ func gopark(unlockf func(*g, unsafe.Pointer) bool, lock unsafe.Pointer, reason w
 	if reason != waitReasonSleep {
 		checkTimeouts() // timeouts may expire while two goroutines keep the scheduler busy
 	}
-	mp := acquirem()
-	gp := mp.curg
+	mp := acquirem()  	// 阻塞当前 G 被抢占   (且返回当前G 的 M)
+	gp := mp.curg		// 获取 M 中的 当前G
 	status := readgstatus(gp)
 	if status != _Grunning && status != _Gscanrunning {
 		throw("gopark: bad g status")
@@ -321,12 +321,14 @@ func gopark(unlockf func(*g, unsafe.Pointer) bool, lock unsafe.Pointer, reason w
 	mp.waitlock = lock
 
 	// todo 记住： unlockf 永远返回 true
-	mp.waitunlockf = unlockf
-	gp.waitreason = reason
+	mp.waitunlockf = unlockf 	// 外面传入 的 解锁回调函数
+	gp.waitreason = reason		// G 被挂起时的 原因
 	mp.waittraceev = traceEv
 	mp.waittraceskip = traceskip
 	releasem(mp)
 	// can't do anything that might move the G between Ms here.
+	//
+	// 无法做任何可能在此处 Ms 之间移动G的操作
 	mcall(park_m)   // macll 会先切换成 g0，并把当前 g 作为参数调用  park_m()
 }
 
@@ -2827,7 +2829,7 @@ top:
 
 	checkTimers(pp, 0)
 
-	var gp *g
+	var gp *g    // todo 用来接收 即将从 队列中获取的 新G 去运行
 	var inheritTime bool
 
 	// Normal goroutines will check for need to wakeP in ready,
@@ -3046,6 +3048,8 @@ func parkunlock_c(gp *g, lock unsafe.Pointer) bool {
 // park continuation on g0.
 //
 // 在 g0 上继续 park
+//
+// 停止当前M的g， 使用M去运行其他g
 //
 // park_m 执行之后，调度器就调度并执行其他的 g， 之前的 gp 也就等待了
 func park_m(gp *g) {

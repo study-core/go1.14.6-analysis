@@ -166,6 +166,8 @@ const (
 // but on the contention path they sleep in the kernel.
 // A zeroed Mutex is unlocked (no need to initialize each lock).
 //
+// todo 锁 (信号灯的底层实现)
+//
 // 	互斥锁的真正底层实现:  在无竞争的情况下，其速度与自旋锁一样快（只有一些用户级指令），但是在争用路径上它们却在内核中休眠。
 // 	置零的互斥锁已解锁（无需初始化每个锁）。
 type mutex struct {
@@ -424,7 +426,7 @@ type sudog struct {
 	acquiretime int64
 	releasetime int64
 
-	// 票号, 在 sync.Cond 中被使用的东西
+	// 票号, 在 sync.Cond 中被使用的东西， 在 sema 信号灯中也用到了
 	ticket      uint32
 	parent      *sudog // semaRoot binary tree
 	waitlink    *sudog // g.waiting list or semaRoot
@@ -480,7 +482,7 @@ type g struct {	// todo G 中有 M
 	stack       stack   // offset known to runtime/cgo
 
 	// todo G 中的两个重要的 栈空间
-	// 检查栈空间是否足够的值, 低于这个值会扩张栈, 0 是 go代码使用的
+	// 检查栈空间是否足够的值, 低于这个值会扩张栈, 0 是 go代码使用的   (在 当前G 被抢占时, 该值会被赋予一个巨大的值 `stackPreempt`)
 	stackguard0 uintptr // offset known to liblink
 	// 检查栈空间是否足够的值, 低于这个值会扩张栈, 1 是 原生代码使用的 (系统调用使用)
 	stackguard1 uintptr // offset known to liblink
@@ -510,6 +512,8 @@ type g struct {	// todo G 中有 M
 	// 下一个g, 当g在链表结构中会使用  (当 G 处于 P的runq 或者 P的gFree 或者 allgs 或者 schedt的runq 或者 schedt的gFree 队列中时, G会以链表的形式指向下一个G)
 	schedlink    guintptr
 	waitsince    int64      // approx time when the g become blocked
+
+	// G被 挂起时 的原因
 	waitreason   waitReason // if status==Gwaiting
 
 	// g 是否被抢占中
@@ -671,6 +675,8 @@ type m struct {  // todo M 里面 有 P 和 G
 
 	//  解锁函数 指针, 这里的解锁函数会对 解除channel.lock的锁定
 	waitunlockf   func(*g, unsafe.Pointer) bool
+
+	// 等待 锁变量的指针,  由 waitunlockf 回调函数使用
 	waitlock      unsafe.Pointer
 	waittraceev   byte
 	waittraceskip int
