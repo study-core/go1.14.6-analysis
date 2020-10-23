@@ -17,10 +17,11 @@ TEXT _rt0_amd64(SB),NOSPLIT,$-8
 	JMP	runtime·rt0_go(SB)
 
 // 在golang中main包中的main函数并不是入口函数， 入口函数是在asm_amd64.s中定义的，而main包中的main函数是由runtime main函数启动的.
+//      就是说 main.main() 其实是 main goroutine 的 func() {}，而不是 程序的入口函数
 
 
 
-// todo main.main()函数的 汇编实现
+// todo 程序入口函数汇编实现
 //
 //
 // main() 是使用外部链接时大多数amd64系统的通用启动代码。 C启动代码将通过通常的 C ABI寄存器DI 和SI 中的argc和argv调用符号 "main".
@@ -29,6 +30,8 @@ TEXT _rt0_amd64(SB),NOSPLIT,$-8
 // main is common startup code for most amd64 systems when using
 // external linking. The C startup code will call the symbol "main"
 // passing argc and argv in the usual C ABI registers DI and SI.
+//
+// main 是使用外部链接时大多数amd64系统的通用启动代码。 C启动代码将通过通常的C ABI寄存器DI和SI中的argc和argv调用符号 "main"
 TEXT main(SB),NOSPLIT,$-8
 	JMP	runtime·rt0_go(SB)
 
@@ -240,7 +243,7 @@ ok:
 	MOVQ	$runtime·mainPC(SB), AX		// entry
 	PUSHQ	AX
 	PUSHQ	$0			// arg size
-	CALL	runtime·newproc(SB)   // 创建一个goroutine，然后开启执行程序   (这里的 g 是 g0)
+	CALL	runtime·newproc(SB)   // 创建一个goroutine，然后开启执行程序   (这里的 g 是 g0)  ===================   调用 runtime·newproc 新建一个goroutine，也叫main goroutine，它的 【任务函数】 是 runtime.main 函数，建好后插入m0绑定的p的本地队列.
 	POPQ	AX
 	POPQ	AX
 
@@ -256,7 +259,7 @@ ok:
 	MOVQ	$runtime·debugCallV1(SB), AX
 	RET
 
-DATA	runtime·mainPC+0(SB)/8,$runtime·main(SB)
+DATA	runtime·mainPC+0(SB)/8,$runtime·main(SB)  // runtime.main() 对应 主协程 (我们程序中的 main.main())
 GLOBL	runtime·mainPC(SB),RODATA,$8
 // func breakpoint() 的汇编实现
 TEXT runtime·breakpoint(SB),NOSPLIT,$0-0

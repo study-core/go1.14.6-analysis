@@ -469,6 +469,9 @@ type stack struct {
 
 // todo G 的定义
 type g struct {	// todo G 中有 M
+
+	// todo 注意:    一个G 一但被创建，那就不会消失，因为runtime有个allgs 保存着所有的 G 指针，但不要担心，G 对象引用的其他对象是会释放的，所以也占不了啥内存.
+
 	// Stack parameters.
 	// stack describes the actual stack memory: [stack.lo, stack.hi).
 	// stackguard0 is the stack pointer compared in the Go stack growth prologue.
@@ -479,6 +482,8 @@ type g struct {	// todo G 中有 M
 	//
 	//
 	// g 使用的 栈空间 (lo - hi)
+	//
+	// 简单数据结构，lo 和 hi 成员描述了栈的下界和上界内存地址
 	stack       stack   // offset known to runtime/cgo
 
 	// todo G 中的两个重要的 栈空间
@@ -495,28 +500,35 @@ type g struct {	// todo G 中有 M
 	// 运行当前 G 被用到的 M  todo G 里面 有 M
 	m            *m      // current m; offset known to arm liblink
 
+	// goroutine切换时，用于保存g的上下文
 	// g 的调度数据, 当g中断时会保存当前的 pc 和 rsp 等值到这里, 恢复运行时会使用这里的值
 	sched        gobuf
 	syscallsp    uintptr        // if status==Gsyscall, syscallsp = sched.sp to use during gc
 	syscallpc    uintptr        // if status==Gsyscall, syscallpc = sched.pc to use during gc
 	stktopsp     uintptr        // expected sp at top of stack, to check in traceback
 
+	// 用于传递参数，睡眠时 其他goroutine可以设置param，唤醒时 该goroutine可以获取
+	//
 	// 当G 被这里会有值, 唤醒时传递的参数
 	param        unsafe.Pointer // passed parameter on wakeup
 
 	// g的当前状态 (看 G 状态的枚举定义咯)
 	atomicstatus uint32
 	stackLock    uint32 // sigprof/scang lock; TODO: fold in to atomicstatus
+
+	// 唯一的goroutine的ID
 	goid         int64
 
 	// 下一个g, 当g在链表结构中会使用  (当 G 处于 P的runq 或者 P的gFree 或者 allgs 或者 schedt的runq 或者 schedt的gFree 队列中时, G会以链表的形式指向下一个G)
 	schedlink    guintptr
+
+	// g被阻塞的大体时间
 	waitsince    int64      // approx time when the g become blocked
 
 	// G被 挂起时 的原因
 	waitreason   waitReason // if status==Gwaiting
 
-	// g 是否被抢占中
+	// 标记 G 是否可抢占
 	preempt       bool // preemption signal, duplicates stackguard0 = stackpreempt
 	preemptStop   bool // transition to _Gpreempted on preemption; otherwise, just deschedule
 	preemptShrink bool // shrink stack at synchronous safe point
@@ -541,6 +553,7 @@ type g struct {	// todo G 中有 M
 	traceseq       uint64   // trace event sequencer
 	tracelastp     puintptr // last P emitted an event for this goroutine
 
+	// G被锁定只在这个m上运行
 	// g 是否要求要回到这个M执行, 有的时候g中断了恢复会要求使用原来的M执行 todo (表示 当前 G 锁定了 M 的地址, 当前G出自某原因中断了, 下次 当前 G 恢复时, 有用该 M 来执行 当前G)
 	lockedm        muintptr
 	sig            uint32
@@ -548,8 +561,11 @@ type g struct {	// todo G 中有 M
 	sigcode0       uintptr
 	sigcode1       uintptr
 	sigpc          uintptr
-	gopc           uintptr         // pc of go statement that created this goroutine
-	ancestors      *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)
+	// 调用者的 PC/IP
+	gopc           uintptr         // pc of go statement that created this goroutine   创建此goroutine的go语句的pc  (即: 当前 G 的调用者<创建者>的 PC)
+	ancestors      *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)    创建此goroutine的祖先信息goroutine（仅在debug.tracebackancestors中使用）
+
+	// G 的任务函数  (即:  go  func() {} 中的 func)
 	startpc        uintptr         // pc of goroutine function
 	racectx        uintptr
 
@@ -586,16 +602,22 @@ type m struct {  // todo M 里面 有 P 和 G
 	// g0 是仅用于 【负责调度】 的G, g0  不指向任何可执行的函数, 每个m都会有一个自己的g0,
 	//    在 【调度】 或 【系统调用】 时会使用g0的栈空间, 【全局变量的g0】 是m0的g0  (m0 是 main 线程)
 	//
+	//			首先要明确的是每个m 都有一个g0，因为每个线程有一个【系统堆栈】，g0 虽然也是g的结构，但和普通的g还是有差别的，最重要的差别就是【栈的差别】.
+	// 					g0 上的栈是【系统分配的栈】，在linux上栈大小【默认固定 8 MB】，不能扩展，也不能缩小.
+	// 					而普通g  一开始只有 2 KB 大小，可扩展.
+	// 			在 g0 上 也没有任何任务函数，也没有任何状态，并且它 不能被 调度程序抢占 (因为调度就是在g0上跑的).
+	//
 	// m0 是启动程序后的主线程,   这个m对应的实例会在 全局变量m0中, 不需要在heap上分配,
 	//    m0负责执行  初始化操作  和  启动第一个g, 在之后m0就和其他的m一样了.
 	//
-	//
+	//  用来执行调度指令的 goroutine
 	g0      *g     // goroutine with scheduling stack
 	morebuf gobuf  // gobuf arg to morestack
 	divmod  uint32 // div/mod denominator for arm - known to liblink
 
 	// Fields not known to debuggers.
 	procid        uint64       // for debuggers, but offset not hard-coded
+	// 处理信号的goroutine
 	gsignal       *g           // signal-handling g
 
 	// `Go-allocated`信号处理栈
@@ -633,18 +655,22 @@ type m struct {  // todo M 里面 有 P 和 G
 	// 在执行系统调用之前 该M所绑定的 P (用来 从系统调用中恢复时, 可能有限去 尝试 和之前绑定的 P再次绑定)
 	oldp          puintptr // the p that was attached before executing a syscall
 	id            int64
+
+	// 状态
 	mallocing     int32
 	throwing      int32
-
-	// 满足 if != "" 时, 继续将 之前的 G 运行在 当前 M 上      ( 调用 `stopTheWorld()` 时, 该值 会写上 Stop 的 原因 )
-	preemptoff    string // if != "", keep curg running on this m
+	preemptoff    string // if != "", keep curg running on this m    todo 满足 if != "" 时, 继续将 之前的 G 运行在 当前 M 上   ( 调用 `stopTheWorld()` 时, 该值 会写上 Stop 的 原因 )
 
 	// 用来记录当前 M 被抢占的 计数 (多少个g抢占M的计数????)   M 被抢占时, 是 不可以 【停止】的
+	//
+	// locks 表示 该 M 是否被锁的状态，M 被锁的状态下 该 M 无法执行 gc
 	locks         int32
 	dying         int32
 	profilehz     int32
 
-	// 当前 M 是否在做 【自旋】
+	// 当前 M 是否在做 【自旋】   自旋就表示M正在找G来运行
+	//
+	// 如果M在 P本地队列、全局 schedt 运行队列、netpoller 中找不到工作，则认为M正在自旋，也就是M进入了一种循环找可运行G的状态.
 	spinning      bool // m is out of work and is actively looking for work
 
 	// 当前 M 正在 阻塞 等待 信号量 note
@@ -660,13 +686,17 @@ type m struct {  // todo M 里面 有 P 和 G
 	fastrand      [2]uint32
 	needextram    bool
 	traceback     uint8
+	 // cgo调用的总数
 	ncgocall      uint64      // number of cgo calls in total
+	// 当前正在cgo调用的数目
 	ncgo          int32       // number of cgo calls currently in progress
 	cgoCallersUse uint32      // if non-zero, cgoCallers in use temporarily
 	cgoCallers    *cgoCallers // cgo traceback if crashing in cgo call
 
 	// M 休眠时 使用的信号量, 唤醒M 时会通过它唤醒
 	park          note
+
+	// 用于链接 allm
 	alllink       *m // on allm
 
 	// 下一个m, 当m在链表结构中会使用  (参照 G 定义中 schedlink 的定义自明)
@@ -675,10 +705,16 @@ type m struct {  // todo M 里面 有 P 和 G
 	// 分配内存时使用的本地分配器, todo  和p.mcache一样(拥有P时会复制过来)
 	mcache        *mcache
 
+	// 锁定g在当前m上执行，而不会切换到其他m，一般 [cgo调用] 或者 [手动调用LockOSThread()] 才会有值
 	// 当 M 被恢复时, 可能使用该 G 继续执行,  和 G 中定义的  lockedm 相呼应  (一般来说只有 GC 的时候 这个才有值)
 	lockedg       guintptr
+
+	// thread 创建的栈
 	createstack   [32]uintptr // stack that created this thread.
+
+	// 用户 锁定 M 的标记 [手动调用LockOSThread()]
 	lockedExt     uint32      // tracking for external LockOSThread
+	// runtime 内部 锁定 M 的标记
 	lockedInt     uint32      // tracking for internal lockOSThread
 	nextwaitm     muintptr    // next m waiting for lock
 
@@ -715,11 +751,13 @@ type m struct {  // todo M 里面 有 P 和 G
 
 	dlogPerM
 
-	mOS
+	mOS  // 系统信号灯 实现
 }
 
 // todo P 的定义
 type p struct {  // todo P 中有 M
+
+	// id也是allp的数组下标
 	id          int32
 
 	// P 的状态枚举值 (参照 P 状态自枚举定义)
@@ -730,6 +768,7 @@ type p struct {  // todo P 中有 M
 
 	// 增加P中记录的调度次数( 每61次优先获取一次 schedt的全局 runq队列中的G)
 	schedtick   uint32     // incremented on every scheduler call
+	// 每一次系统调用加1
 	syscalltick uint32     // incremented on every system call
 	sysmontick  sysmontick // last tick observed by sysmon
 
@@ -749,6 +788,8 @@ type p struct {  // todo P 中有 M
 	deferpoolbuf [5][32]*_defer
 
 	// Cache of goroutine ids, amortizes accesses to runtime·sched.goidgen.
+	//
+	// goroutine的ID的缓存
 	goidcache    uint64
 	goidcacheend uint64
 
@@ -778,7 +819,7 @@ type p struct {  // todo P 中有 M
 	// 		则此“ schedules”将被设置为一个单元，并消除了（潜在的）较大的调度延迟，
 	// 		否则会因将已准备好的“ goroutines”添加到“调度”而产生。 运行队列的末尾。
 	//
-	//  todo 这个放置 一个下一个 可以运行的G ??
+	// todo 下一个运行的g，优先级最高
 	runnext guintptr
 
 	// Available G's (status == Gdead)
@@ -935,7 +976,7 @@ type schedt struct {
 	pidle      puintptr // idle p's
 	npidle     uint32
 
-	// 正在做 自旋的 M 的个数
+	// 正在做 自旋的 M 的个数  (runtime中一共有多少个M在 自旋状态)
 	nmspinning uint32 // See "Worker thread parking/unparking" comment in proc.go.
 
 	// Global runnable queue.
