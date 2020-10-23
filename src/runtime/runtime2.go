@@ -597,7 +597,10 @@ type m struct {  // todo M 里面 有 P 和 G
 	// Fields not known to debuggers.
 	procid        uint64       // for debuggers, but offset not hard-coded
 	gsignal       *g           // signal-handling g
+
+	// `Go-allocated`信号处理栈
 	goSigStack    gsignalStack // Go-allocated signal handling stack
+	// 存储已保存的信号掩码
 	sigmask       sigset       // storage for saved signal mask
 
 	// todo 很重要的
@@ -608,7 +611,7 @@ type m struct {  // todo M 里面 有 P 和 G
 	//   	go在实现协程时非常依赖TLS机制, 会用于获取系统线程中当前的G和G所属的M的实例.
 	//
 	//   	因为go并不使用glibc, 操作TLS会使用系统原生的接口, 以linux x64为例,
-	//   	go在新建M时会调用arch_prctl这个syscall设置FS寄存器的值为M.tls的地址,
+	//   	todo  go 在 新建M  时会调用 arch_prctl这个syscall  设置 FS寄存器 的值为M.tls的地址,
 	//   	运行中每个M的FS寄存器都会指向它们对应的M实例的tls, linux内核调度线程时FS寄存器会跟着线程一起切换,
 	//   	这样go代码只需要访问FS寄存器就可以存取线程本地的数据.
 	//
@@ -626,6 +629,8 @@ type m struct {  // todo M 里面 有 P 和 G
 
 	// 指向 下一个 潜在关联性的 P 地址 (当 M 被 重新启用时, 会先去尝试和 这个 P 关联)
 	nextp         puintptr
+
+	// 在执行系统调用之前 该M所绑定的 P (用来 从系统调用中恢复时, 可能有限去 尝试 和之前绑定的 P再次绑定)
 	oldp          puintptr // the p that was attached before executing a syscall
 	id            int64
 	mallocing     int32
@@ -634,16 +639,20 @@ type m struct {  // todo M 里面 有 P 和 G
 	// 满足 if != "" 时, 继续将 之前的 G 运行在 当前 M 上      ( 调用 `stopTheWorld()` 时, 该值 会写上 Stop 的 原因 )
 	preemptoff    string // if != "", keep curg running on this m
 
-	// 用来记录当前 M 被抢占的 计数 (多少个g抢占M的计数????)
+	// 用来记录当前 M 被抢占的 计数 (多少个g抢占M的计数????)   M 被抢占时, 是 不可以 【停止】的
 	locks         int32
 	dying         int32
 	profilehz     int32
 
 	// 当前 M 是否在做 【自旋】
 	spinning      bool // m is out of work and is actively looking for work
+
+	// 当前 M 正在 阻塞 等待 信号量 note
 	blocked       bool // m is blocked on a note
 	newSigstack   bool // minit on C thread called sigaltstack
 	printlock     int8
+
+	// 当前 M 正在做 cgo 调用
 	incgo         bool   // m is executing a cgo call
 	freeWait      uint32 // if == 0, safe to free g0 and delete m (atomic)
 
@@ -656,7 +665,7 @@ type m struct {  // todo M 里面 有 P 和 G
 	cgoCallersUse uint32      // if non-zero, cgoCallers in use temporarily
 	cgoCallers    *cgoCallers // cgo traceback if crashing in cgo call
 
-	// M休眠时 使用的信号量, 唤醒M时会通过它唤醒
+	// M 休眠时 使用的信号量, 唤醒M 时会通过它唤醒
 	park          note
 	alllink       *m // on allm
 
@@ -974,7 +983,7 @@ type schedt struct {
 	/**
 	下面 5 个字段是  辅助 GC 执行而存在的
 	 */
-	// 值是 1 时, 说明正在 GC, 然后调度器 停止 P 和 M
+	// todo 值是 1 时, 说明正在 GC, 然后调度器 停止 P 和 M
 	gcwaiting  uint32 	// gc is waiting to run     gc 等待运行状态.   (作为gc任务被执行期间的辅助标记、停止计数和通知机制)
 	// 当该值 为 0 时, 说明调度器 完全停止工作, 这是 GC就可以开始了
 	stopwait   int32	// 用来对 还未被停止调度的 P 进行计数 (GC到来时)

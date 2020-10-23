@@ -757,6 +757,8 @@ func semawakeup(mp *m) {
 	}
 }
 
+
+// todo 创建 M 的信号灯
 //go:nosplit
 func semacreate(mp *m) {
 	if mp.waitsema != 0 {

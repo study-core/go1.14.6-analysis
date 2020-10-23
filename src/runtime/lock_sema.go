@@ -151,7 +151,8 @@ func unlock(l *mutex) {
 	}
 }
 
-// One-time notifications.
+// todo 清除 信号灯的标识位,  唤醒监听者
+// One-time notifications.     一次性通知
 func noteclear(n *note) {
 	if GOOS == "aix" {
 		// On AIX, semaphores might not synchronize the memory in some
@@ -162,6 +163,8 @@ func noteclear(n *note) {
 	}
 }
 
+
+// 信号灯 唤醒 监听者
 func notewakeup(n *note) {
 	var v uintptr
 	for {
@@ -185,12 +188,14 @@ func notewakeup(n *note) {
 	}
 }
 
+
+// 休眠信号灯   (通知 监听者, 休眠 ？？)
 func notesleep(n *note) {
 	gp := getg()
 	if gp != gp.m.g0 {
 		throw("notesleep not on g0")
 	}
-	semacreate(gp.m)
+	semacreate(gp.m)  // 创建 M 的信号灯
 	if !atomic.Casuintptr(&n.key, 0, uintptr(unsafe.Pointer(gp.m))) {
 		// Must be locked (got wakeup).
 		if n.key != locked {

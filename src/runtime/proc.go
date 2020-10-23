@@ -1163,7 +1163,7 @@ func startTheWorldWithSema(emitTraceEvent bool) int64 {
 	// 取消GC等待标记
 	sched.gcwaiting = 0
 
-	// 如果sysmon在等待则唤醒它
+	// 如果 sysmon 在等待则唤醒它
 	if sched.sysmonwait != 0 {
 		sched.sysmonwait = 0
 		notewakeup(&sched.sysmonnote)
@@ -1171,7 +1171,7 @@ func startTheWorldWithSema(emitTraceEvent bool) int64 {
 	unlock(&sched.lock)
 
 
-	// 唤醒有可运行任务的P
+	// 唤醒 有可运行任务的P
 	for p1 != nil {
 		p := p1
 		p1 = p1.link.ptr()
@@ -2047,14 +2047,23 @@ func templateThread() {
 	}
 }
 
+//
+// 停止执行当前的 M，直到有新工作可用
+// 返回 M 中的 P
+//
 // Stops execution of the current m until new work is available.
 // Returns with acquired P.
 func stopm() {
+
+	// 获取当前G
 	_g_ := getg()
 
+	// 这时候 M 中的 G 的抢占锁 应该都 被释放了才对
 	if _g_.m.locks != 0 {
 		throw("stopm holding locks")
 	}
+
+	// M 中的 P 应该被释放了才对
 	if _g_.m.p != 0 {
 		throw("stopm holding p")
 	}
@@ -2063,12 +2072,13 @@ func stopm() {
 	}
 
 	lock(&sched.lock)
-	mput(_g_.m)
+	mput(_g_.m)   // 将 当前 空闲M  放到 全局schedt 的空闲 M 队列中
 	unlock(&sched.lock)
-	notesleep(&_g_.m.park)
-	noteclear(&_g_.m.park)
-	acquirep(_g_.m.nextp.ptr())
-	_g_.m.nextp = 0
+	// 等到另一个线程再次调度 lockedg   (说白了, 就是等待当前 M 被别的 G 释放掉出来)     （看  stoplockdm() 函数中 这两部的做法）
+	notesleep(&_g_.m.park)     	// 通知 M 休眠   (使用 信号灯)
+	noteclear(&_g_.m.park)		// todo 清除 信号灯的标识位,  唤醒监听者 ??
+	acquirep(_g_.m.nextp.ptr())		// M 被唤醒后,  尝试性 去绑定 潜在的 P
+	_g_.m.nextp = 0					// nextp  转移到  p 字段了,  则清除掉 nextp
 }
 
 func mspinning() {
@@ -2225,13 +2235,13 @@ func wakep() {
 	startm(nil, true)
 }
 
-// 休眠当前 M
+// todo 休眠当前 M
 //
 // Stops execution of the current m that is locked to a g until the g is runnable again.
 // Returns with acquired P.
 //
 //
-// 停止执行锁定到g的当前m，直到g可再次运行
+// 停止执行锁定到g的当前m，直到g可再次运行   todo  (该函数 会阻塞)
 // 返回获得的 P
 func stoplockedm() {
 	_g_ := getg()
@@ -2281,10 +2291,15 @@ func startlockedm(gp *g) {
 	incidlelocked(-1)
 	_p_ := releasep()
 	mp.nextp.set(_p_)
-	notewakeup(&mp.park)
-	stopm()
+	notewakeup(&mp.park)   // 信号灯 唤醒 监听者 M
+	stopm()   // ?? 不懂, 为什么 有 停掉 M ??
 }
 
+
+// 停止 当前 M (当 StopTheWorld 来临时)
+//
+//    该函数 会在  世界重新开始时 才返回
+//
 // Stops the current m for stopTheWorld.
 // Returns when the world is restarted.
 func gcstopm() {
@@ -2301,15 +2316,17 @@ func gcstopm() {
 			throw("gcstopm: negative nmspinning")
 		}
 	}
-	_p_ := releasep()
+	_p_ := releasep()   // 释放 M 拥有的 P, P会变为空闲(_Pidle)状态
 	lock(&sched.lock)
 	_p_.status = _Pgcstop
-	sched.stopwait--
+	sched.stopwait--    //  因为 GC 到来, P 被释放, 故   (还没有停止 的P 的计数  -1)
+
+	// 当 P 都停止了, 向 GC回收器  发出 通知信号
 	if sched.stopwait == 0 {
-		notewakeup(&sched.stopnote)
+		notewakeup(&sched.stopnote)   // 信号灯 唤醒 监听者M
 	}
 	unlock(&sched.lock)
-	stopm()
+	stopm()	// 这里才是 停掉 M
 }
 
 // todo 执行 G
@@ -2790,6 +2807,8 @@ func injectglist(glist *gList) {
 //
 // 不仅只有G结束会重新开始调度, G被抢占 <sysmon()函数实现抢占>  或者等待资源也会重新进行调度
 func schedule() {
+
+	// 最开始的时候, 这个是 g0
 	_g_ := getg()
 
 	if _g_.m.locks != 0 {
@@ -2798,12 +2817,17 @@ func schedule() {
 
 	// 如果当前GC需要停止整个世界（STW), 则调用stopm休眠当前的M
 	if _g_.m.lockedg != 0 {
+		// 休眠 当前 M
+		// 停止执行锁定到g的当前m，直到g可再次运行   todo  (该函数 会阻塞)
 		stoplockedm()
+		// 执行被锁定的 G
 		execute(_g_.m.lockedg.ptr(), false) // Never returns.
 	}
 
 	// We should not schedule away from a g that is executing a cgo call,
 	// since the cgo call is using the m's g0 stack.
+	//
+	// 由于执行 cgo调用 使用了 m的g0堆栈， 因此我们 不应 将正在执行 cgo调用的 G 安排在远离的地方
 	if _g_.m.incgo {
 		throw("schedule: in cgo")
 	}
@@ -2812,8 +2836,10 @@ top:
 	pp := _g_.m.p.ptr()
 	pp.preempt = false
 
+
+	// todo 如果正在 gc, 那么 当前 调度是 停止 P 和 M 的
 	if sched.gcwaiting != 0 {
-		gcstopm()
+		gcstopm()   // 停止 当前 M (当 StopTheWorld 来临时)
 		goto top
 	}
 
@@ -2927,7 +2953,7 @@ top:
 		goto top			// 从休眠唤醒后跳到 schedule() 的 顶部重试
 	}
 
-	execute(gp, inheritTime)  // 调用execute函数 执行G
+	execute(gp, inheritTime)  // todo 调用execute函数 执行G
 }
 
 // 解除 M 和 G 之间的关联
@@ -3059,7 +3085,7 @@ func parkunlock_c(gp *g, lock unsafe.Pointer) bool {
 //
 // 在 g0 上继续 park
 //
-// 停止当前M的g， 使用M去运行其他g
+// 停止当前 M 的G， 使用M去运行其他G
 //
 // park_m 执行之后，调度器就调度并执行其他的 g， 之前的 gp 也就等待了
 func park_m(gp *g) {
@@ -3415,7 +3441,7 @@ func reentersyscall(pc, sp uintptr) {
 	_g_.m.mcache = nil
 	pp := _g_.m.p.ptr()
 	pp.m = 0
-	_g_.m.oldp.set(pp)
+	_g_.m.oldp.set(pp)   // M 要开始做 【系统调用】 了, 将 P 解除, 并 记录P 到 oldp字段, 在从 【系统调用】 中恢复时, 会优先 尝试 重新和这个P绑定
 	_g_.m.p = 0
 	atomic.Store(&pp.status, _Psyscall)
 	if sched.gcwaiting != 0 {
@@ -4868,7 +4894,7 @@ func procresize(nprocs int32) *p {
 //
 //go:yeswritebarrierrec
 func acquirep(_p_ *p) {
-	// Do the part that isn't allowed to have write barriers.   做不允许写障碍的部分
+	// Do the part that isn't allowed to have write barriers.   做不允许 写屏障 的部分
 	wirep(_p_)
 
 	// Have p; write barriers now allowed.
@@ -4944,6 +4970,14 @@ func incidlelocked(v int32) {
 // Check for deadlock situation.
 // The check is based on number of running M's, if 0 -> deadlock.
 // sched.lock must be held.
+//
+//
+//  检查死锁情况
+//
+//		检查是 基于 正在运行的 M 的数量, 如果为 0 则需要报 "deadlock"
+//
+//		必须加锁操作
+//
 func checkdead() {
 	// For -buildmode=c-shared or -buildmode=c-archive it's OK if
 	// there are no running goroutines. The calling program is
@@ -5468,6 +5502,15 @@ func schedEnabled(gp *g) bool {
 // Put mp on midle list.
 // Sched must be locked.
 // May run during STW, so write barriers are not allowed.
+//
+//
+// 将 M 放在  全局 schedt 的 空闲 M 队列
+//
+// 必须是 加锁操作
+//
+//		可能在STW期间运行，因此不允许写入障碍   (STW 时,  写屏障 肯定已经 关闭了)
+//
+//
 //go:nowritebarrierrec
 func mput(mp *m) {
 	mp.schedlink = sched.midle
