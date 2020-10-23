@@ -305,7 +305,8 @@ func semrelease1(addr *uint32, handoff bool, skipframes int) {
 			// See issue 33747 for discussion.
 			//
 			//
-			// 直接G切换
+			// todo 直接 G 切换
+			//
 			// `readyWithTime()` 已在当前P中将 waiter G添加为runnext; 我们现在调用调度程序，以便我们立即开始运行 waiter G
 			// 注意，waiter 继承了我们的时间片：
 			// 			这是避免避免竞争激烈的信号量无限期地占用P的理想选择. `goyield()` 类似于Gosched，但是它发出“被抢占”的跟踪事件，
@@ -322,7 +323,7 @@ func semrelease1(addr *uint32, handoff bool, skipframes int) {
 			// 等待的 g 继承时间片，避免无限制的争夺信号量
 			// 把当前 g 放到 p 本地队列的队尾，启动调度器，因为 s.g 在本地队列的下一个，所以调度器立马执行 s.g
 			//
-			// goyield 调用 mcall 执行 goyield_m， todo goyield_m 会把当前的 g 放到 p 本地对象的队尾， 然后执行调度器
+			// goyield 调用 mcall 执行 goyield_m， todo goyield_m 会把当前的 g 放到 p 本地对象的队尾， 然后执行调度器 发起新的【一轮调度】
 			goyield()
 		}
 	}

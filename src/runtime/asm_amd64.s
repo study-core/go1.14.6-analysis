@@ -16,9 +16,14 @@ TEXT _rt0_amd64(SB),NOSPLIT,$-8
 	LEAQ	8(SP), SI	// argv
 	JMP	runtime·rt0_go(SB)
 
-// todo main 入口函数的 汇编实现
+// 在golang中main包中的main函数并不是入口函数， 入口函数是在asm_amd64.s中定义的，而main包中的main函数是由runtime main函数启动的.
+
+
+
+// todo main.main()函数的 汇编实现
 //
-// main 是使用外部链接时大多数amd64系统的通用启动代码。 C启动代码将通过通常的 C ABI寄存器DI 和SI 中的argc和argv调用符号 "main".
+//
+// main() 是使用外部链接时大多数amd64系统的通用启动代码。 C启动代码将通过通常的 C ABI寄存器DI 和SI 中的argc和argv调用符号 "main".
 //
 //
 // main is common startup code for most amd64 systems when using
@@ -88,7 +93,11 @@ DATA _rt0_amd64_lib_argc<>(SB)/8, $0
 GLOBL _rt0_amd64_lib_argc<>(SB),NOPTR, $8
 DATA _rt0_amd64_lib_argv<>(SB)/8, $0
 GLOBL _rt0_amd64_lib_argv<>(SB),NOPTR, $8
+
+
+
 // func rt0_go() 的汇编实现
+//
 TEXT runtime·rt0_go(SB),NOSPLIT,$0
 	// copy arguments forward on an even stack
 	MOVQ	DI, AX		// argc
@@ -196,40 +205,50 @@ needtls:
 	JEQ 2(PC)
 	CALL	runtime·abort(SB)
 ok:
+
+    // 程序刚启动的时候必定有一个线程启动（主线程）
+    // 将当前的 栈 和 资源 保存在 g0
+    // 将该线程保存在 m0
+    //
+    // tls: Thread Local Storage   (线程本地存储, 内核线程自己的堆栈存储信息)
+    //
 	// set the per-goroutine and per-mach "registers"
 	get_tls(BX)
 	LEAQ	runtime·g0(SB), CX
 	MOVQ	CX, g(BX)
 	LEAQ	runtime·m0(SB), AX
 
+    // m0和g0互相绑定
+    //
 	// save m->g0 = g0
 	MOVQ	CX, m_g0(AX)
 	// save m0 to g0->m
 	MOVQ	AX, g_m(CX)
 
-	CLD				// convention is D is always left cleared
-	CALL	runtime·check(SB)
+	CLD				// convention is D is always left cleared    约定D总是清除
+	CALL	runtime·check(SB)       // 做一些事先检查 工作
 
 	MOVL	16(SP), AX		// copy argc
 	MOVL	AX, 0(SP)
 	MOVQ	24(SP), AX		// copy argv
 	MOVQ	AX, 8(SP)
-	CALL	runtime·args(SB)
-	CALL	runtime·osinit(SB)
-	CALL	runtime·schedinit(SB)
+	CALL	runtime·args(SB)            // 处理args
+	CALL	runtime·osinit(SB)          // os初始化， os_linux.go
+	CALL	runtime·schedinit(SB)       // 调度系统初始化, proc.go
 
 	// create a new goroutine to start program
 	MOVQ	$runtime·mainPC(SB), AX		// entry
 	PUSHQ	AX
 	PUSHQ	$0			// arg size
-	CALL	runtime·newproc(SB)
+	CALL	runtime·newproc(SB)   // 创建一个goroutine，然后开启执行程序   (这里的 g 是 g0)
 	POPQ	AX
 	POPQ	AX
 
 	// start this M
+	// 启动线程，并且启动调度系统 (在 mstart() 中最终调用 schedule() 发起 【一轮调度】)
 	CALL	runtime·mstart(SB)
 
-	CALL	runtime·abort(SB)	// mstart should never return
+	CALL	runtime·abort(SB)	// mstart should never return   mstart永不返回   (因为 里面开始了 无限 调度 schedule())
 	RET
 
 	// Prevent dead-code elimination of debugCallV1, which is

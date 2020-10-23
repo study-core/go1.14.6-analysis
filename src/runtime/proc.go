@@ -1303,7 +1303,7 @@ func mstart1() {
 		acquirep(_g_.m.nextp.ptr())
 		_g_.m.nextp = 0
 	}
-	schedule()   // todo 发起 【一轮调度程序】：找到一个可运行的goroutine并执行它
+	schedule()   // todo 在 mstart() 中, 发起 【一轮调度程序】：找到一个可运行的goroutine并执行它
 	// schedule函数获取g => [必要时休眠] => [唤醒后继续获取] => execute函数执行g => 执行后返回到goexit => 重新执行schedule函数
 }
 
@@ -2221,7 +2221,7 @@ func handoffp(_p_ *p) {
 // Tries to add one more P to execute G's.
 // Called when a G is made runnable (newproc, ready).
 //
-//  todo 唤醒或新建一个M
+//  todo 唤醒 或 新建一个M
 //
 //	尝试再添加一个P以执行G。
 //	当G变为可运行状态（newproc，就绪）时调用。
@@ -2231,7 +2231,7 @@ func wakep() {
 		return
 	}
 
-	// 启动一个 M
+	// 启动一个 M  (但是 这是只是一个 M 而已,  还没发起 schedule()调度)
 	startm(nil, true)
 }
 
@@ -3085,7 +3085,7 @@ func parkunlock_c(gp *g, lock unsafe.Pointer) bool {
 //
 // 在 g0 上继续 park
 //
-// 停止当前 M 的G， 使用M去运行其他G
+// todo 停止当前 M 的G， 使用 M 去运行 其他 G
 //
 // park_m 执行之后，调度器就调度并执行其他的 g， 之前的 gp 也就等待了
 func park_m(gp *g) {
@@ -3115,7 +3115,7 @@ func park_m(gp *g) {
 		}
 	}
 
-	schedule()  // 最后调用 schedule() 函数 继续调度
+	schedule()  // todo 在 park_m() 中,  调用 schedule() 发起新的【一轮调度】 (停止当前 M 的G， 使用 M 去运行 其他 G)
 }
 
 // 最终最终抢占的 最最底层实现函数
@@ -3138,7 +3138,7 @@ func goschedImpl(gp *g) {
 	globrunqput(gp)							// 调用globrunqput把G放到 schedt的 全局 runq队列
 	unlock(&sched.lock)
 
-	schedule() // 至此, 抢占结束,  触发起 新的一轮调度 【一轮调度】
+	schedule() // todo 在 goschedImpl() 中 让出当前 G 让 M 去执行其他 G, 触发起 新的一轮调度 【一轮调度】
 
 	/**
 	因为 schedt 的 全局 runq 队列的优先度比较低, 各个M会经过一段时间再去重新获取这个G执行,
@@ -3177,7 +3177,7 @@ func gopreempt_m(gp *g) {
 	goschedImpl(gp)  // 调用goschedImpl函数
 }
 
-// preemptPark parks gp and puts it in _Gpreempted.
+// preemptPark parks gp and puts it in _Gpreempted.   preemptPark() 停掉 G 并将其放入_Gpreempted
 //
 //go:systemstack
 func preemptPark(gp *g) {
@@ -3199,32 +3199,34 @@ func preemptPark(gp *g) {
 	casGToPreemptScan(gp, _Grunning, _Gscan|_Gpreempted)
 	dropg()
 	casfrom_Gscanstatus(gp, _Gscan|_Gpreempted, _Gpreempted)
-	schedule()
+	schedule()   // todo 在 preemptPark() 中,  停掉 G 并将其放入_Gpreempted， 并发起新的 【一轮调度】
 }
 
+
+// todo 切换 M 中的 G, 发起新的【一轮调度】
 // goyield is like Gosched, but it:
 // - emits a GoPreempt trace event instead of a GoSched trace event
 // - puts the current G on the runq of the current P instead of the globrunq
 //
 // goyield 类似于Gosched，但它：
-//		-发出GoPreempt跟踪事件，而不是GoSched跟踪事件
-//		-将当前G放在当前P的runq上，而不是globrunq
+//		- 发出 `GoPreempt` 跟踪事件，而不是 `GoSched` 跟踪事件
+//		- 将当前G 放在当前P 的 runq上，而不是 globrunq
 //
-// goyield 调用 mcall 执行 goyield_m， goyield_m 会把当前的 g 放到 p 本地对象的队尾， 然后执行调度器
+// goyield 调用 mcall 执行 goyield_m， goyield_m 会把当前的 g 放到 p 本地对象的队尾， 然后执行调度器 发起新的【一轮调度】
 func goyield() {
 	checkTimeouts()
 	mcall(goyield_m)
 }
-
+// goyield_m 会把当前的 g 放到 p 本地对象的队尾， 然后执行调度器 发起新的【一轮调度】
 func goyield_m(gp *g) {
 	if trace.enabled {
 		traceGoPreempt()
 	}
 	pp := gp.m.p.ptr()
 	casgstatus(gp, _Grunning, _Grunnable)
-	dropg()
-	runqput(pp, gp, false)
-	schedule()
+	dropg()   // 解除 M 和 G 之间的关联
+	runqput(pp, gp, false)   // 将 G 放到 P 的 runq 中
+	schedule()  // todo 在 goyield_m() 中 把当前的 g 放到 p 本地对象的队尾， 然后执行调度器 发起新的【一轮调度】
 }
 
 // Finishes execution of the current goroutine.
@@ -3304,7 +3306,7 @@ func goexit0(gp *g) {
 
 	if GOARCH == "wasm" { // no threads yet on wasm
 		gfput(_g_.m.p.ptr(), gp)  		// 调用gfput函数 把G放到P的自由列表中, 下次创建G时可以复用
-		schedule() // never returns  	// todo 发起新一轮 【一轮调度】
+		schedule() // never returns  	 todo 在 goexit0() 中, 执行完当前 G了, 发起新一轮 【一轮调度】
 	}
 
 	if _g_.m.lockedInt != 0 {
@@ -3327,7 +3329,7 @@ func goexit0(gp *g) {
 			_g_.m.lockedExt = 0
 		}
 	}
-	schedule()  // todo 发起新一轮 【一轮调度】   (G结束后回到schedule函数, 这样就结束了一个调度循环  最终我们看到的是：  schedule() -> ... -> goexit0() -> schedule() -> ... ->  goexit0() -> ... 这样纸 一轮一轮的调度)
+	schedule()  // todo 在 goexit0() 中, 执行完当前 G了, 发起新一轮 【一轮调度】   (G结束后回到schedule函数, 这样就结束了一个调度循环  最终我们看到的是：  schedule() -> ... -> goexit0() -> schedule() -> ... ->  goexit0() -> ... 这样纸 一轮一轮的调度)
 }
 
 // save updates getg().sched to refer to pc and sp so that a following
@@ -3540,6 +3542,8 @@ func entersyscallblock_handoff() {
 	handoffp(releasep())
 }
 
+// 将当前G 退出 【系统调度用】 的对外实现
+//
 // The goroutine g exited its system call.
 // Arrange for it to run on a cpu again.
 // This is called only from the go syscall library, not
@@ -3710,6 +3714,8 @@ func exitsyscallfast_pidle() bool {
 	return false
 }
 
+// 将当前G 退出 【系统调度用】 的底层真正实现
+//
 // exitsyscall slow path on g0.
 // Failed to acquire P, enqueue gp as runnable.
 //
@@ -3741,7 +3747,7 @@ func exitsyscall0(gp *g) {
 		execute(gp, false) // Never returns.
 	}
 	stopm()
-	schedule() // Never returns.
+	schedule() // Never returns.  todo  在 exitsyscall0() 中, 当前 G 退出 【系统调用】, 并发起新的【一轮调度】
 }
 
 func beforefork() {
@@ -4092,7 +4098,7 @@ func newproc1(fn *funcval, argp unsafe.Pointer, narg int32, callergp *g, callerp
 						线程创建后会设置TLS, 设置TLS中当前的g为g0, 然后执行 `mstart()`
 					调用 notewakeup(&mp.park)唤醒线程
 		 */
-		wakep() //  唤醒或新建一个M
+		wakep() //  唤醒 或 新建一个M
 	}
 
 

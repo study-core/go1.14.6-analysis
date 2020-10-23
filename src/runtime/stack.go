@@ -1031,7 +1031,7 @@ func newstack() {
 		}
 
 		if gp.preemptStop {
-			preemptPark(gp) // never returns
+			preemptPark(gp) // never returns    永不返回,  抢占 G
 		}
 
 		// Act like goroutine called runtime.Gosched.
