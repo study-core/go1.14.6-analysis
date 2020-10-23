@@ -293,7 +293,19 @@ func addtimer(t *timer) {
 	unlock(&pp.timersLock)
 
 	// 唤醒 【网络轮询器】
-	wakeNetPoller(when)  // 里头很多事 汇编实现的
+	wakeNetPoller(when)  // 网络轮询器为  跨平台实现.
+
+	/**
+
+	使用平台特定的函数实现了多个版本的网络轮询模块
+
+		src/runtime/netpoll_epoll.go    (linux 是这个)
+		src/runtime/netpoll_kqueue.go
+		src/runtime/netpoll_solaris.go
+		src/runtime/netpoll_windows.go
+		src/runtime/netpoll_aix.go
+		src/runtime/netpoll_fake.go
+	 */
 }
 
 // doaddtimer adds t to the current P's heap.
@@ -309,7 +321,7 @@ func doaddtimer(pp *p, t *timer) {
 	//
 	// 计时器依赖于网络轮询器，因此请确保轮询器已启动
 	if netpollInited == 0 {
-		netpollGenericInit()
+		netpollGenericInit()   // 查看 `src/time/time.go`   网络轮询器的初始化
 	}
 
 
@@ -909,7 +921,7 @@ func nobarrierWakeTime(pp *p) int64 {
 	}
 }
 
-
+// 执行定时器,   执行一个定时器
 // todo 尝试着 运行 Timer 堆中第一个 Timer
 //
 // runtimer examines the first timer in timers. If it is ready based on now,

@@ -418,7 +418,7 @@ type maptype struct {
 
 	// function for hashing keys (ptr to key, seed) -> hash
 	//
-	// 散列键（点到键，种子）的函数->散列
+	// HashKey(key的指针，种子) 的函数->散列
 	hasher     func(unsafe.Pointer, uintptr) uintptr
 
 	// 每个key 槽的大小

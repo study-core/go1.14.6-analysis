@@ -2382,6 +2382,7 @@ func execute(gp *g, inheritTime bool) {
 // Finds a runnable goroutine to execute.
 // Tries to steal from other P's, get g from local or global queue, poll network.
 //
+// todo 查找  可执行的G
 //
 // 查找要执行的  可运行goroutine
 // 尝试从  其他P 窃取，从 P本地 或 全局队列 获取 G，轮询网络
@@ -2406,6 +2407,7 @@ top:
 		runSafePointFn()
 	}
 
+	// todo 先检查下当前 P 中的 runtimeTimer 堆中的 定时器
 	now, pollUntil, _ := checkTimers(_p_, 0)
 
 	if fingwait && fingwake {
@@ -2468,14 +2470,14 @@ top:
 		atomic.Xadd(&sched.nmspinning, 1)
 	}
 
-	// 如果获取不到G, 则执行 Work Stealing  (去其他P的队列中偷来G)
+	// todo 如果获取不到G, 则执行 Work Stealing  (去其他P的队列中偷来G)
 	for i := 0; i < 4; i++ {
 		for enum := stealOrder.start(fastrand()); !enum.done(); enum.next() {
 			if sched.gcwaiting != 0 {
 				goto top
 			}
 			stealRunNextG := i > 2 // first look for ready queues with more than 1 g
-			p2 := allp[enum.position()]
+			p2 := allp[enum.position()]   // 从 全局的 P队列中  获取 P的指针
 			if _p_ == p2 {
 				continue
 			}
@@ -2492,7 +2494,7 @@ top:
 			// for preemption. If p2 is running and not being
 			// preempted we assume it will handle its own timers.
 			if i > 2 && shouldStealTimers(p2) {
-				tnow, w, ran := checkTimers(p2, now)
+				tnow, w, ran := checkTimers(p2, now)   // todo 在 向其他P 偷G的过程中, 也顺便检查下 对应的 P 中的timer 是否可以执行
 				now = tnow
 				if w != 0 && (pollUntil == 0 || w < pollUntil) {
 					pollUntil = w
@@ -2726,7 +2728,7 @@ func wakeNetPoller(when int64) {
 		// but should never miss a wakeup.
 		pollerPollUntil := int64(atomic.Load64(&sched.pollUntil))
 		if pollerPollUntil == 0 || pollerPollUntil > when {
-			netpollBreak()
+			netpollBreak()  // 唤醒网络轮询器，例如：计时器向前修改时间时会通过该函数中断网络轮询器
 		}
 	}
 }
@@ -2827,6 +2829,8 @@ top:
 		throw("schedule: spinning with local work")
 	}
 
+
+	// todo 检查下 P 中的定时器是否可以 执行
 	checkTimers(pp, 0)
 
 	var gp *g    // todo 用来接收 即将从 队列中获取的 新G 去运行
@@ -2964,6 +2968,12 @@ func dropg() {
 //					我们现在传入和传出，以避免额外调用nanotime 
 //
 //
+// 该方法在 三个地方 中 被优先调用:
+//
+//		schedule():		启动一轮调度的开始时
+//		findrunnable(): 快速获取一个 可执行的G 的开始时
+//		findrunnable(): 快速获取一个 可执行的G 的从其他P中偷G动作时
+//
 //go:yeswritebarrierrec
 func checkTimers(pp *p, now int64) (rnow, pollUntil int64, ran bool) {
 	// If there are no timers to adjust, and the first timer on
@@ -2999,7 +3009,7 @@ func checkTimers(pp *p, now int64) (rnow, pollUntil int64, ran bool) {
 		for len(pp.timers) > 0 {
 			// Note that runtimer may temporarily unlock
 			// pp.timersLock.
-			if tw := runtimer(pp, rnow); tw != 0 {
+			if tw := runtimer(pp, rnow); tw != 0 {    // 执行 定时器
 				if tw > 0 {
 					pollUntil = tw
 				}
@@ -5790,12 +5800,16 @@ func runqgrab(_p_ *p, batch *[256]guintptr, batchHead uint32, stealRunNextG bool
 	}
 }
 
+//  todo 从其他P中偷G
+//
+// 将 p2 中的 可执行G 投一部分到 _p_的 runq队列中, 并返回一个 可执行的G
+//
 // Steal half of elements from local runnable queue of p2
 // and put onto local runnable queue of p.
 // Returns one of the stolen elements (or nil if failed).
 func runqsteal(_p_, p2 *p, stealRunNextG bool) *g {
 	t := _p_.runqtail
-	n := runqgrab(p2, &_p_.runq, t, stealRunNextG)
+	n := runqgrab(p2, &_p_.runq, t, stealRunNextG)  // 将 p2 中的 可执行G 投一部分到 _p_的 runq队列中
 	if n == 0 {
 		return nil
 	}

@@ -133,6 +133,8 @@ type hmap struct {
 	// 这个B一定程度上表示的就是桶的数量，当然不是说B是3桶的数量就是3，而是2的3次方，也就是8；当B为5，桶的数量就是32；记住这个B，后面会用到它
 	B         uint8  // log_2 of # of buckets (can hold up to loadFactor * 2^B items)
 	noverflow uint16 // approximate number of overflow buckets; see incrnoverflow for details
+
+	// 计算Hash的种子
 	hash0     uint32 // hash seed
 
 	// 这个是 map 中各个 bucket 数组的头指针
@@ -752,6 +754,7 @@ done:
 	return elem
 }
 
+// 删除map中的k-v
 func mapdelete(t *maptype, h *hmap, key unsafe.Pointer) {
 	if raceenabled && h != nil {
 		callerpc := getcallerpc()

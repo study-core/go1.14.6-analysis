@@ -858,7 +858,7 @@ type p struct {  // todo P 中有 M
 	//
 	//	有时需要采取的行动。 这用于实现标准库的时间包。
 	//	必须持有timersLock才能访问。
-	timers []*timer
+	timers []*timer   //  todo 分散在 每个 P 中的 timer 或者 ticker 定时器实例  (runtimeTimer 堆的底层数组)
 
 	// Number of timers in P's heap.
 	// Modified using atomic instructions.
@@ -891,7 +891,7 @@ type p struct {  // todo P 中有 M
 	// scheduler ASAP (regardless of what G is running on it).
 	preempt bool
 
-	pad cpu.CacheLinePad
+	pad cpu.CacheLinePad   // 做对齐用
 }
 
 // todo 系统调度器 的定义
