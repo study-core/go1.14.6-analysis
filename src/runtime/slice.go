@@ -196,6 +196,7 @@ func isPowerOfTwo(x uintptr) bool {
 	return x&(x-1) == 0
 }
 
+// 调用 copy(dst, src) 时被调用的方法
 func slicecopy(to, fm slice, width uintptr) int {
 	if fm.len == 0 || to.len == 0 {
 		return 0
