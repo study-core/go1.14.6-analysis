@@ -665,6 +665,7 @@ opswitch:
 			n = walkexpr(n, init)
 			break opswitch
 
+		// 编译器对 append()内置函数的编译处理
 		case OAPPEND:
 			// x = append(...)
 			r := n.Right
@@ -801,6 +802,7 @@ opswitch:
 		n = typecheck(n, ctxStmt)
 		n = walkexpr(n, init)
 
+	// 编译器对delete()内置函数的处理
 	case ODELETE:
 		init.AppendNodes(&n.Ninit)
 		map_ := n.List.First()
@@ -814,6 +816,8 @@ opswitch:
 			// order.stmt made sure key is addressable.
 			key = nod(OADDR, key, nil)
 		}
+
+		// 最终调用delete(map, key)
 		n = mkcall1(mapfndel(mapdelete[fast], t), nil, init, typename(t), map_, key)
 
 	case OAS2DOTTYPE:
@@ -1449,12 +1453,17 @@ opswitch:
 			break
 		}
 
-		a := nodnil()
+		a := nodnil()  // `nil` 分配到堆上的的默认行为
+
+		// 如果不需要 "逃逸"
 		if n.Esc == EscNone {
 			// Create temporary buffer for slice on stack.
 			t := types.NewArray(types.Types[TUINT8], tmpstringbufsize)
-			a = nod(OADDR, temp(t), nil)
+			a = nod(OADDR, temp(t), nil)    // 分配在栈上，大小为32
 		}
+
+		// 编译器调用 string转slice函数 `stringtoslicebyte()`
+		//
 		// stringtoslicebyte(*32[byte], string) []byte
 		n = mkcall("stringtoslicebyte", n.Type, init, a, conv(s, types.Types[TSTRING]))
 
@@ -2604,6 +2613,10 @@ func walkAppendArgs(n *Node, init *Nodes) {
 	}
 }
 
+// append()内置函数 直接由编译器处理成相应的语法
+//
+//      实际上 append() 会在编译时期被当成一个TOKEN直接编译成汇编代码，因此 append() 并不是在运行时调用的一个函数
+//
 // expand append(l1, l2...) to
 //   init {
 //     s := l1

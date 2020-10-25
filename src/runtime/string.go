@@ -11,6 +11,10 @@ import (
 
 // The constant is known to the compiler.
 // There is no fundamental theory behind this number.
+//
+//
+// 常量是编译器已知的
+// 这个数字背后没有基本理论
 const tmpStringBufSize = 32
 
 type tmpBuf [tmpStringBufSize]byte
@@ -155,9 +159,10 @@ func slicebytetostringtmp(b []byte) string {
 	}
 	return *(*string)(unsafe.Pointer(&b))
 }
-
+// string 转 []byte 的底层函数
 func stringtoslicebyte(buf *tmpBuf, s string) []byte {
 	var b []byte
+	// 如果字符串 s 的长度内部长度不超过 32， 那么就直接分配一个 32 大小的buf
 	if buf != nil && len(s) <= len(buf) {
 		*buf = tmpBuf{}
 		b = buf[:len(s)]

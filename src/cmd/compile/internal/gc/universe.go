@@ -42,6 +42,7 @@ var typedefs = [...]struct {
 	{"uintptr", TUINTPTR, TUINT32, TUINT64},
 }
 
+// 编译器定义内置函数的地方
 var builtinFuncs = [...]struct {
 	name string
 	op   Op
@@ -65,6 +66,8 @@ var builtinFuncs = [...]struct {
 
 // isBuiltinFuncName reports whether name matches a builtin function
 // name.
+//
+// 根据函数名判断是否是内置函数
 func isBuiltinFuncName(name string) bool {
 	for _, fn := range builtinFuncs {
 		if fn.name == name {
@@ -74,6 +77,7 @@ func isBuiltinFuncName(name string) bool {
 	return false
 }
 
+// 编译器定义Unsafe包的三个函数
 var unsafeFuncs = [...]struct {
 	name string
 	op   Op

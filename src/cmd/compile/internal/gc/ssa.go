@@ -2616,6 +2616,7 @@ func (s *state) expr(n *Node) *ssa.Value {
 			return nil
 		}
 
+	// 遍历器对 动态类型的  len() 和 cap() 的处理    (slice ...)
 	case OLEN, OCAP:
 		switch {
 		case n.Left.Type.IsSlice():

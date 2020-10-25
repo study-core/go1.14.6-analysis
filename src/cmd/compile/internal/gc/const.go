@@ -630,7 +630,7 @@ func evconst(n *Node) {
 		} else {
 			n.List.Set(s)
 		}
-
+	// 遍历器对 固定类型的  len() 和 cap() 的处理
 	case OCAP, OLEN:
 		switch nl.Type.Etype {
 		case TSTRING:
