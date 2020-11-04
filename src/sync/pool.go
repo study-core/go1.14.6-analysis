@@ -102,7 +102,7 @@ type poolLocal struct {
 	//
 	//
 	/**
-	cache 使用中常见的一个问题是 false sharing （伪共享）
+	CPU cache 使用中常见的一个问题是 false sharing （伪共享）
 
 	当不同的线程同时读写同一 cache line 上不同数据时就可能发生false sharing
 
