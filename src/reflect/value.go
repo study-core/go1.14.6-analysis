@@ -2160,6 +2160,8 @@ func Copy(dst, src Value) int {
 	return typedslicecopy(de.common(), ds, ss)
 }
 
+// 结构需要和  ../runtime/select.go:/runtimeSelect 一样 ...
+//
 // A runtimeSelect is a single case passed to rselect.
 // This must match ../runtime/select.go:/runtimeSelect
 type runtimeSelect struct {
@@ -2215,7 +2217,7 @@ type SelectCase struct {
 	Send Value     // value to send (for send)
 }
 
-// 通过 反射 创建一个  select 结构
+// todo 通过 反射 创建一个  select 结构
 //
 // Select executes a select operation described by the list of cases.
 // Like the Go select statement, it blocks until at least one of the cases
@@ -2230,6 +2232,8 @@ func Select(cases []SelectCase) (chosen int, recv Value, recvOK bool) {
 	// and each iteration makes its own copy of the value c.
 	runcases := make([]runtimeSelect, len(cases))
 	haveDefault := false
+
+	// 根据 []SelectCase 切片， 构造 []runtimeSelect 切片
 	for i, c := range cases {
 		rc := &runcases[i]
 		rc.dir = c.Dir

@@ -630,7 +630,7 @@ func reflect_rselect(cases []runtimeSelect) (int, bool) {
 	sel := make([]scase, len(cases))
 	order := make([]uint16, 2*len(cases))	// order0为一个两倍cas0数组长度的buffer， 保存scase随机序列 pollorder 和 scase中channel地址序列 lockorder, todo 看我的博客知道旧的实现中 pollorder 和 lockorder 分别是啥了
 
-	// 遍历 所有 case及default 语句实例
+	// 遍历 所有 case及default 语句实例  todo 根据 []runtimeSelect 切片 构造 []scase 切片
 	for i := range cases {
 
 		// 取出 每一个 case 和 default 语句块
@@ -657,8 +657,8 @@ func reflect_rselect(cases []runtimeSelect) (int, bool) {
 		}
 	}
 
-	// 去执行 select 语句
-	return selectgo(&sel[0], &order[0], len(cases))
+
+	return selectgo(&sel[0], &order[0], len(cases))  // todo 真正 去执行 select 语句
 }
 
 func (q *waitq) dequeueSudoG(sgp *sudog) {
