@@ -1203,6 +1203,8 @@ type _defer struct {
 
 	// defer  func () 对应的 函数引用  (函数地址)
 	fn        *funcval // can be nil for open-coded defers
+
+	// defer 中的 panic 指针
 	_panic    *_panic  // panic that is running defer
 
 	// 指向自身结构的指针，用于链接多个defer todo 就是用这个实现了 类似 多个defer 入栈的结构 ??

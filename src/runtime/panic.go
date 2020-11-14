@@ -555,7 +555,9 @@ func freedeferfn() {
 // The single argument isn't actually used - it just has its address
 // taken so it can be matched against pending defers.
 //go:nosplit
-func deferreturn(arg0 uintptr) {
+func deferreturn(arg0 uintptr) {  // todo 在 return 前调用 defer 时 被调用
+
+	// todo return 不是原子操作， 执行过程是:   保存返回值(若有)   —>   执行defer（若有）  —>  执行ret跳转
 
 	// 取出当前 g，
 	// 取出 g 中 defer链表的首个 defer
@@ -565,7 +567,7 @@ func deferreturn(arg0 uintptr) {
 		return
 	}
 
-	// 获取 当前 调用的  sp 寄存器 (保存 ret 数据的东西??)
+	// 获取 当前 调用者的 sp 寄存器 (保存 ret 数据的东西??)
 	sp := getcallersp()
 	if d.sp != sp {
 		return

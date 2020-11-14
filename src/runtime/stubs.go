@@ -275,11 +275,12 @@ func publicationBarrier()
 // A general rule is that the result of getcallersp should be used
 // immediately and can only be passed to nosplit functions.
 
-//go:noescape
-func getcallerpc() uintptr
 
 //go:noescape
-func getcallersp() uintptr // implemented as an intrinsic on all platforms
+func getcallerpc() uintptr   // 返回 调用者的 pc 寄存器
+
+//go:noescape
+func getcallersp() uintptr // implemented as an intrinsic on all platforms   返回 调用者的 sp 寄存器
 
 // getclosureptr returns the pointer to the current closure.
 // getclosureptr can only be used in an assignment statement
@@ -295,7 +296,7 @@ func getcallersp() uintptr // implemented as an intrinsic on all platforms
 //
 // The compiler rewrites calls to this function into instructions that fetch the
 // pointer from a well-known register (DX on x86 architecture, etc.) directly.
-func getclosureptr() uintptr
+func getclosureptr() uintptr   // 获取 闭包 指针 ??
 
 //go:noescape
 func asmcgocall(fn, arg unsafe.Pointer) int32
@@ -312,7 +313,7 @@ func rt0_go()  // todo 这个是 `go程序的入口点`     (有很多种平台�
 //
 //
 //
-// 在 deferproc() 的最后被调用，以向调用 Go函数 发出信号，告知它不应跳转到 deferreturn() .  在 asm_*.s 中实现     (其实在 deferStack() 中最后也被调用)
+// todo 在 deferproc() 的最后被调用，以向调用 Go函数 发出信号，告知它不应跳转到 deferreturn() .  在 asm_*.s 中实现     (其实在 deferStack() 中最后也被调用)
 func return0()
 
 // in asm_*.s
