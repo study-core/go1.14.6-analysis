@@ -138,6 +138,8 @@ type hmap struct {
 	hash0     uint32 // hash seed
 
 	// 这个是 map 中各个 bucket 数组的头指针
+	//
+	// todo buckets 数组长度为 2^B
 	buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
 	oldbuckets unsafe.Pointer // previous bucket array of half the size, non-nil only when growing
 
@@ -178,10 +180,17 @@ type mapextra struct {
 }
 
 // A bucket for a Go map.
+//
+// hmap 结构中  buckets 数组中  单个 bucket 的定义
+//
+// todo 一个 bucket 中只放 8 个 k-v
 type bmap struct {
 	// tophash generally contains the top byte of the hash value
 	// for each key in this bucket. If tophash[0] < minTopHash,
 	// tophash[0] is a bucket evacuation state instead.
+	//
+	// todo 存储哈希值的高8位
+	//
 	tophash [bucketCnt]uint8
 	// Followed by bucketCnt keys and then bucketCnt elems.
 	// NOTE: packing all the keys together and then all the elems together makes the
@@ -342,7 +351,7 @@ func makemap64(t *maptype, hint int64, h *hmap) *hmap {
 /**
 // makemap_small为make（map [k] v）和
 // make（map [k] v，hint），当提示最多为bucketCnt时
-// 在编译时，需要在堆上分配映射。
+// 在编译时，需要在堆上分配映射
  */
 func makemap_small() *hmap {
 	h := new(hmap)
@@ -356,7 +365,7 @@ func makemap_small() *hmap {
 // If h != nil, the map can be created directly in h.
 // If h.buckets != nil, bucket pointed to can be used as the first bucket.
 /**
-// makemap为make（map [k] v，hint）实现Go map 创建。
+// makemap为make（map [k] v，hint）实现Go map 创建
 //如果编译器已确定该映射或第一个存储桶
 //可以在堆栈上创建，h和/或bucket可以为非nil。
 //如果h！= nil，则可以直接在h中创建地图。
@@ -638,8 +647,12 @@ func mapaccess2_fat(t *maptype, h *hmap, key, zero unsafe.Pointer) (unsafe.Point
 
 // Like mapaccess, but allocates a slot for the key if it is not present in the map.
 //
-// 这个是 map[key] = val 的 put 方法,
-//	与 `mapaccess` 类似，但是如果地图中不存在密钥，则为该密钥分配一个插槽。
+// 与mapaccess类似，但是如果 map 中不存在 key ，则为该 key 分配一个插槽
+//
+// 这个是 map[key] = val 的 put 方法
+//
+// todo 在外面做 put 的  (reflect_mapassign() 中)
+//
 func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if h == nil {
 		panic(plainError("assignment to entry in nil map"))
@@ -656,7 +669,7 @@ func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if h.flags&hashWriting != 0 {
 		throw("concurrent map writes")
 	}
-	hash := t.hasher(key, uintptr(h.hash0))
+	hash := t.hasher(key, uintptr(h.hash0))  // todo 将 key 算了 Hash
 
 	// Set hashWriting after calling t.hasher, since t.hasher may panic,
 	// in which case we have not actually done a write.
@@ -672,7 +685,7 @@ again:
 		growWork(t, h, bucket)
 	}
 	b := (*bmap)(unsafe.Pointer(uintptr(h.buckets) + bucket*uintptr(t.bucketsize)))
-	top := tophash(hash)
+	top := tophash(hash)  // 取出 key Hash 的高8位
 
 	var inserti *uint8
 	var insertk unsafe.Pointer
@@ -1421,10 +1434,12 @@ func reflect_mapaccess(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	return elem
 }
 
+// todo 这个是 map 的 put
+//
 //go:linkname reflect_mapassign reflect.mapassign
 func reflect_mapassign(t *maptype, h *hmap, key unsafe.Pointer, elem unsafe.Pointer) {
 	p := mapassign(t, h, key)
-	typedmemmove(t.elem, p, elem)
+	typedmemmove(t.elem, p, elem)  // todo 使用 内存复制的方式 将 value 弄到对应的 内存中
 }
 
 //go:linkname reflect_mapdelete reflect.mapdelete
