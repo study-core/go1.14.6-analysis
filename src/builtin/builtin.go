@@ -68,6 +68,10 @@ type complex128 complex128
 // string is the set of all strings of 8-bit bytes, conventionally but not
 // necessarily representing UTF-8-encoded text. A string may be empty, but
 // not nil. Values of string type are immutable.
+//
+// string 是 8 bit 的 byte 的所有字符串的集合，按常规，但不一定表示UTF-8编码的文本.
+// 		 	todo 字符串可以为空，但不能为nil
+// 			todo 字符串类型的值是不可变的
 type string string
 
 // int is a signed integer type that is at least 32 bits in size. It is a

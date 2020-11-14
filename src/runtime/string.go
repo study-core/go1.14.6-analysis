@@ -122,7 +122,7 @@ func stringDataOnStack(s string) bool {
 }
 
 
-// 生成一个新的string， 返回的string和切片共享相同的空间
+// 生成一个新的string， 返回 共享相同的空间 的 string 和 切片
 func rawstringtmp(buf *tmpBuf, l int) (s string, b []byte) {
 	if buf != nil && l <= len(buf) {
 		b = buf[:l]
@@ -225,6 +225,11 @@ func slicerunetostring(buf *tmpBuf, a []rune) string {
 }
 
 // string 类型 数据结构定义
+//
+// string 是 8 bit 的 byte 的所有字符串的集合，按常规，但不一定表示UTF-8编码的文本.
+// 		 	todo 字符串可以为空，但不能为nil
+// 			todo 字符串类型的值是不可变的
+//
 type stringStruct struct {
 	str unsafe.Pointer		// 	字符串 首地址
 	len int					//	字符串 长度
@@ -265,7 +270,10 @@ func intstring(buf *[4]byte, v int64) (s string) {
 // string and byte slice both refer to the same storage.
 // The storage is not zeroed. Callers should use
 // b to set the string contents and then drop b.
-func rawstring(size int) (s string, b []byte) {
+//
+// todo 因为string是无法直接修改的， 所以这里使用rawstring()方法初始化一个指定大小的string， 同时返回一个切片， 二者共享同一块内存空间， 后面向切片中拷贝数据， 也就间接修改了string.
+//
+func rawstring(size int) (s string, b []byte) { // todo 生成一个新的string， 返回的string和切片共享相同的空间.
 	p := mallocgc(uintptr(size), nil, false)
 
 	stringStructOf(&s).str = p
