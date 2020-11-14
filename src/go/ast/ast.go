@@ -842,9 +842,11 @@ type (
 	// A ValueSpec node represents a constant or variable declaration
 	// (ConstSpec or VarSpec production).
 	//
+	//
+	// 常量 或者 变量 表达式
 	ValueSpec struct {
 		Doc     *CommentGroup // associated documentation; or nil
-		Names   []*Ident      // value names (len(Names) > 0)
+		Names   []*Ident      // value names (len(Names) > 0)   这个切片中保存了一行中定义的常量， 如果一行定义N个常量， 那么 ValueSpec.Names 切片长度即为 N
 		Type    Expr          // value type; or nil
 		Values  []Expr        // initial values; or nil
 		Comment *CommentGroup // line comments; or nil
