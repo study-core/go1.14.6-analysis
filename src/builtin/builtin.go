@@ -85,11 +85,11 @@ type uintptr uintptr
 // byte is an alias for uint8 and is equivalent to uint8 in all ways. It is
 // used, by convention, to distinguish byte values from 8-bit unsigned
 // integer values.
-type byte = uint8
+type byte = uint8   // todo byte 就是 uint8 的别名
 
 // rune is an alias for int32 and is equivalent to int32 in all ways. It is
 // used, by convention, to distinguish character values from integer values.
-type rune = int32
+type rune = int32  // todo rune 就是 int32 的别名 (可以处理 Unicode 码)
 
 // iota is a predeclared identifier representing the untyped integer ordinal
 // number of the current const specification in a (usually parenthesized)
