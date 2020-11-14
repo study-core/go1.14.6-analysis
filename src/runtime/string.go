@@ -230,7 +230,12 @@ func slicerunetostring(buf *tmpBuf, a []rune) string {
 // 		 	todo 字符串可以为空，但不能为nil
 // 			todo 字符串类型的值是不可变的
 //
-type stringStruct struct {
+/**
+像C++语言中的string， 其本身拥有内存空间， 修改string是支持的. todo  但Go的实现中， string不包含内存空间， 只有一个内存的指针， 这样做的好处是string变得非常轻量， 可以很方便的进行传递而不用担心内存拷贝.
+
+todo	因为string通常指向字符串字面量， 而字符串字面量存储位置是 【只读段】， 而不是堆或栈上， 所以才有了string不可修改的约定.
+ */
+type stringStruct struct {  // todo string 字面量 存储在 【只读段】上
 	str unsafe.Pointer		// 	字符串 首地址
 	len int					//	字符串 长度
 }
