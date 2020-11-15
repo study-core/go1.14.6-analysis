@@ -2589,7 +2589,7 @@ top:
 				goto top
 			}
 			stealRunNextG := i > 2 // first look for ready queues with more than 1 g
-			p2 := allp[enum.position()]   // 从 全局的 P队列中  获取 P的指针
+			p2 := allp[enum.position()]   // todo 从 全局的 P队列中  获取 P的指针
 			if _p_ == p2 {
 				continue
 			}
@@ -3140,7 +3140,7 @@ func checkTimers(pp *p, now int64) (rnow, pollUntil int64, ran bool) {
 		for len(pp.timers) > 0 {
 			// Note that runtimer may temporarily unlock
 			// pp.timersLock.
-			if tw := runtimer(pp, rnow); tw != 0 {    // 执行 定时器
+			if tw := runtimer(pp, rnow); tw != 0 {    // checkTimers() 中, 执行 定时器 (调度定时器)
 				if tw > 0 {
 					pollUntil = tw
 				}
@@ -3193,7 +3193,7 @@ func parkunlock_c(gp *g, lock unsafe.Pointer) bool {
 // todo 停止当前 M 的G， 使用 M 去运行 其他 G
 //
 // park_m 执行之后，调度器就调度并执行其他的 g， 之前的 gp 也就等待了
-func park_m(gp *g) {
+func park_m(gp *g) {  // 只有 gopark() 会调用
 
 	// 当前 g 是 g0
 	_g_ := getg()
@@ -3220,7 +3220,7 @@ func park_m(gp *g) {
 		}
 	}
 
-	schedule()  // todo 在 park_m() 中,  调用 schedule() 发起新的【一轮调度】 (停止当前 M 的G， 使用 M 去运行 其他 G)
+	schedule()  // todo 在 park_m() 中 (停止当前 M 的G， 使用 M 去运行 其他 G),  调用 schedule() 发起新的【一轮调度】 (停止当前 M 的G， 使用 M 去运行 其他 G)
 }
 
 // 最终最终抢占的 最最底层实现函数
@@ -3243,7 +3243,7 @@ func goschedImpl(gp *g) {
 	globrunqput(gp)							// 调用globrunqput把G放到 schedt的 全局 runq队列
 	unlock(&sched.lock)
 
-	schedule() // todo 在 goschedImpl() 中 让出当前 G 让 M 去执行其他 G, 触发起 新的一轮调度 【一轮调度】
+	schedule() // todo 在 goschedImpl() 中 让出当前 G,  让 M 去执行其他 G, 触发起 新的一轮调度 【一轮调度】
 
 	/**
 	因为 schedt 的 全局 runq 队列的优先度比较低, 各个M会经过一段时间再去重新获取这个G执行,
@@ -4910,7 +4910,7 @@ func (pp *p) destroy() {
 		pp.raceprocctx = 0
 	}
 	pp.gcAssistTime = 0
-	pp.status = _Pdead
+	pp.status = _Pdead  // _Pdead 状态的 P 在任何流程都不会被处理, 最终被 GC 掉 todo (做法是 比较 p.status 从来不用 _Pdead )
 }
 
 // Change number of processors. The world is stopped, sched is locked.

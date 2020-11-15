@@ -201,7 +201,7 @@ func timeSleep(ns int64) {		// time.Sleep() 的真正实现
 	}
 
 	// 设置 这个 timer 的 定时 回调函数
-	t.f = goroutineReady   	// 就是简单的 唤醒当前 G
+	t.f = goroutineReady   	// 就是简单的 唤醒当前 G   (time.timeSleep()的实现)
 	t.arg = gp				// 回调 func 的第一参数就是 当前 G
 	t.nextwhen = nanotime() + ns	// 设置 定时时间      todo time.Sleep() 是将时间 设置到  nextwhen字段的.  不是 when 字段
 
@@ -293,7 +293,7 @@ func addtimer(t *timer) {
 	unlock(&pp.timersLock)
 
 	// 唤醒 【网络轮询器】
-	wakeNetPoller(when)  // 网络轮询器为  跨平台实现.
+	wakeNetPoller(when)  // todo 网络轮询器为  跨平台实现.
 
 	/**
 
@@ -1028,7 +1028,7 @@ func runOneTimer(pp *p, t *timer, now int64) {
 		raceacquirectx(ppcur.timerRaceCtx, unsafe.Pointer(t))
 	}
 
-	f := t.f
+	f := t.f  		// 取出 定时器对应的 任务函数
 	arg := t.arg
 	seq := t.seq
 
