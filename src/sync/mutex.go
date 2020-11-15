@@ -241,6 +241,11 @@ func (m *Mutex) lockSlow() {
 			}
 
 			// 进入自旋锁 后当前goroutine并不挂起，仍然在占用cpu资源，所以重试一定次数后，不会再进入自旋锁逻辑
+			//
+			// todo 自旋对应于CPU的 "PAUSE" 指令， CPU对该指令什么都不做， 相当于CPU空转， 对程序而言相当于sleep了一小段时间， 时间非常短， 当前实现是30个时钟周期
+			//
+			// 自旋过程中会持续探测Locked 是否变为0， todo 连续两次探测间隔就是执行这些PAUSE指令， 它不同于sleep， 不需要将协程转为 睡眠状态   (而是让 CPU 执行 PAUSE 指令，不做任何事)
+			//
 			runtime_doSpin()
 			iter++
 			old = m.state
