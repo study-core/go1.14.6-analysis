@@ -353,10 +353,10 @@ func (m *Mutex) lockSlow() {
 
 
 			/**
-			 todo 如果old state的状态是  未被锁状态，并且锁   未饥饿状态,
-             todo 那么当前goroutine 可以追加到队列 末尾了
+			 todo 如果old state的状态是  未被锁状态，并且 未饥饿状态,
+             todo // 那么当前goroutine已经获取了锁的拥有权，返回
 			 */
-			// xxxx...x0x0 & 0101 = 0，表示可以获取对象锁 （即 还是判断之前的状态，锁不是饥饿 也不是被锁定， 将当前 g 追加到队列末尾, 结束流程）
+			// xxxx...x0x0 & 0101 = 0，表示可以获取对象锁 （即 还是判断之前的状态，锁不是饥饿 也不是被锁定，  那么当前 g 已经获取了锁的拥有权，返回)  在上面 todo 【一】 的地方获得锁了
 
 			if old&(mutexLocked|mutexStarving) == 0 {
 				break // locked the mutex with CAS
@@ -433,12 +433,13 @@ func (m *Mutex) lockSlow() {
 
 				一个骚操作
 				 */
-				delta := int32(mutexLocked - 1<<mutexWaiterShift)
+				delta := int32(mutexLocked - 1<<mutexWaiterShift) // 当前g 用来设置锁，并将等待的g 数减 1
 
 				// todo 如果当前 g 不是饥饿状态 或者   已经没有 其他等待的g <只有一个 当前 g 了>，就没有必要继续维持 饥饿模式，同时也没必要继续执行该循环（当前只有一个协程在占用锁）
 				/**
-				todo 如果 当前goroutine并不处于饥饿状态，或者它是最后一个等待者
-                	那么我们需要把 锁的state状态设置为 【正常模式】.
+				todo 如果 当前g 并不处于饥饿状态，或者 当前g 是最后一个等待者
+
+                todo 那么我们需要把 锁的state状态设置为 【正常模式】.
 				 */
 				if !starving || old>>mutexWaiterShift == 1 {
 					// Exit starvation mode.
@@ -447,7 +448,7 @@ func (m *Mutex) lockSlow() {
 					// can go lock-step infinitely once they switch mutex
 					// to starvation mode.
 					//
-					//退出饥饿模式
+					// todo 退出饥饿模式
 					//在此处进行操作并考虑等待时间至关重要
 					//饥饿模式效率低下，一旦两个goroutine将 mutex 切换到饥饿模式，那么 它们就 可能无限地进行 锁定
 
@@ -455,7 +456,8 @@ func (m *Mutex) lockSlow() {
 					delta -= mutexStarving
 				}
 				// 将 【1个 g 且 被唤醒 和 被锁定】 状态 从  mutex 上清除掉
-				// 设置新state, 因为已经获得了锁，退出、返回
+				//
+				// todo 设置新state, 因为已经获得了锁，退出、返回
 				atomic.AddInt32(&m.state, delta)   // todo  想不要明白 为什么 把  lock 标识 也清掉了??  因为只有一个 g 了, 没人和我竞争, 所以直接清除掉 所有标识 ??  但是为啥不清空 【饥饿】 状态 ??
 				break
 			}
@@ -515,7 +517,7 @@ func (m *Mutex) unlockSlow(new int32) {
 	被通知的 goroutine 会去做下面的事情:
 
     	锁如果处于【饥饿状态】，直接交给等待队列的第一个, 唤醒它，让它去获取锁.
-    	锁如果处于【正常状态】，则需要唤醒对头的 goroutine 让它和新来的goroutine去竞争锁，当然极大几率为失败，
+    	锁如果处于【正常状态】，则需要唤醒 队头的 goroutine 让它和新来的goroutine去竞争锁，当然极大几率为失败，
 								这时候 被唤醒的goroutine需要排队在队列的前面 (然后自旋， 并开始做 等待计时).
 								如果被唤醒的goroutine有超过1ms没有获取到mutex锁，那么它就会变为饥饿模式.
 	 */
@@ -587,10 +589,24 @@ func (m *Mutex) unlockSlow(new int32) {
 			直接将锁的拥有权传给等待队列中的第一个g.
 
         注意:
-		此时state的mutexLocked还没有加锁，唤醒的goroutine会设置它。
+		todo 此时state的mutexLocked还没有加锁，唤醒的goroutine会设置它
         在此期间，如果有新的goroutine来请求锁， 因为mutex处于饥饿状态， mutex还是被认为处于锁状态，
         新来的goroutine不会把锁抢过去.
 		 */
 		runtime_Semrelease(&m.sema, true, 1)
 	}
 }
+
+
+/**
+如果一个goroutine g1 通过Lock获取了锁， 在持有锁的期间， 另外一个goroutine g2 调用Unlock释放这个锁， 会出现什么现象？
+
+A、 g2 调用 Unlock panic
+
+B、 g2 调用 Unlock 成功，但是如果将来 g1调用 Unlock 会 panic
+
+C、 g2 调用 Unlock 成功，如果将来 g1调用 Unlock 也成功
+
+
+选 B     报了:  "sync: unlock of unlocked mutex"
+ */
