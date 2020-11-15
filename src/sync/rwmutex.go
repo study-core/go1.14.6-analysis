@@ -64,11 +64,11 @@ func (rw *RWMutex) RLock() {
 	//  todo 如果写锁已经被获取，那么readerCount在 - rwmutexMaxReaders与 0 之间 (查看 Lock() 部分代码)，这时挂起获取读锁的goroutine，
 	// 如果写锁没有被获取，那么readerCount>=0，获取读锁,不阻塞
 	// todo 通过readerCount的正负判断读锁与写锁互斥,  如果有写锁存在就挂起读锁的goroutine,多个读锁可以并行
-	if atomic.AddInt32(&rw.readerCount, 1) < 0 {
+	if atomic.AddInt32(&rw.readerCount, 1) < 0 { // 说明目前有 写锁
 		// A writer is pending, wait for it.
 		//
 		// 挂起当前 来获取读锁的 g
-		runtime_SemacquireMutex(&rw.readerSem, false, 0)
+		runtime_SemacquireMutex(&rw.readerSem, false, 0)  // 将当前 读锁代码 停留在 这一行逻辑, 等待  runtime_Semrelease() 来释放 ...
 	}
 	if race.Enabled {
 		race.Enable()
@@ -130,7 +130,7 @@ func (rw *RWMutex) rUnlockSlow(r int32) {
 	//	当 完全没有 读锁时, 释放 挂起的 写锁 g
 	if atomic.AddInt32(&rw.readerWait, -1) == 0 {
 		// The last reader unblocks the writer.
-		runtime_Semrelease(&rw.writerSem, false, 1)
+		runtime_Semrelease(&rw.writerSem, false, 1)  // 释放掉 之前被 runtime_SemacquireMutex() 挂起的 那个写锁
 	}
 }
 
@@ -165,7 +165,7 @@ func (rw *RWMutex) Lock() {
 	// todo 当 读锁数目 不为0 时
 	// 记录 写锁阻塞时的 读锁数目, 且 将当前获取写锁的 g 挂起
 	if r != 0 && atomic.AddInt32(&rw.readerWait, r) != 0 {
-		runtime_SemacquireMutex(&rw.writerSem, false, 0)
+		runtime_SemacquireMutex(&rw.writerSem, false, 0)  // 当前这个写锁的 G 的逻辑停留在这一行了, 等待 runtime_Semrelease() 释放 ...
 	}
 	if race.Enabled {
 		race.Enable()
@@ -209,7 +209,7 @@ func (rw *RWMutex) Unlock() {
 	//
 	// todo 唤醒 获取【读锁】期间所有被阻塞的goroutine
 	for i := 0; i < int(r); i++ {
-		runtime_Semrelease(&rw.readerSem, false, 0)
+		runtime_Semrelease(&rw.readerSem, false, 0)  // 将所有 读锁的逻辑，从  runtime_SemacquireMutex() 出继续往下走.
 	}
 	// Allow other writers to proceed.
 	//
