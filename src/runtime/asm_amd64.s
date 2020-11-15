@@ -236,11 +236,11 @@ ok:
 	MOVQ	24(SP), AX		// copy argv
 	MOVQ	AX, 8(SP)
 	CALL	runtime·args(SB)            // 处理args
-	CALL	runtime·osinit(SB)          // os初始化， os_linux.go
-	CALL	runtime·schedinit(SB)       // 调度系统初始化, proc.go
+	CALL	runtime·osinit(SB)          // os初始化， 在 os_linux.go 文件中
+	CALL	runtime·schedinit(SB)       // 调度系统初始化, 在 proc.go 文件中
 
 	// create a new goroutine to start program
-	MOVQ	$runtime·mainPC(SB), AX		// entry
+	MOVQ	$runtime·mainPC(SB), AX		// entry  // 处理 main.mian(),  在 proc.go 文件中
 	PUSHQ	AX
 	PUSHQ	$0			// arg size
 	CALL	runtime·newproc(SB)   // 创建一个goroutine，然后开启执行程序   (这里的 g 是 g0)  ===================   调用 runtime·newproc 新建一个goroutine，也叫main goroutine，它的 【任务函数】 是 runtime.main 函数，建好后插入m0绑定的p的本地队列.

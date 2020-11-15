@@ -303,7 +303,7 @@ func asmcgocall(fn, arg unsafe.Pointer) int32
 
 func morestack()  // 汇编实现  todo (栈扩张底层函数) 函数会保存G的状态到g.sched, 切换到g0和g0的栈空间, 然后调用 newstack() 函数
 func morestack_noctxt() // 汇编实现  todo (栈扩张的入口函数)   morestack_noctxt()函数 清空rdx寄存器并调用 morestack()函数
-func rt0_go()  // todo 这个是 `go程序的入口点`     (有很多种平台的 汇编实现)
+func rt0_go()  // todo 这个是 `go程序入口点`     (有很多种平台的 汇编实现)
 
 // return0 is a stub used to return 0 from deferproc.
 // It is called at the very end of deferproc to signal
