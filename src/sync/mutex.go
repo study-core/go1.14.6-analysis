@@ -386,7 +386,7 @@ func (m *Mutex) lockSlow() {
             如果是新来的goroutine, queueLifo = false, 加入到等待队列的尾部，耐心等待
             如果是唤醒的goroutine, queueLifo = true, 加入到等待队列的头部
 			 */
-			// 通过 信号量 阻塞当前 g
+			// todo 通过 信号量 阻塞当前 g <当前G的 逻辑栈也就停在这里了, 被调用 runtime_Semrelease() 时，会接着往下走>
 			runtime_SemacquireMutex(&m.sema, queueLifo, 1)
 
 
@@ -497,6 +497,8 @@ func (m *Mutex) Unlock() {
 
 	/**
 	todo 如果state不是处于 【被锁定】的状态, 那么就是Unlock根本没有加锁的mutex, 抛 panic
+
+	todo  已经来 什么都不管，先 减掉【锁定】标识   (后面会加回来做判断的)
 	*/
 	// state -1 标识解锁 (移除锁定标记)
 	// Fast path: drop lock bit.
@@ -524,6 +526,8 @@ func (m *Mutex) unlockSlow(new int32) {
 
 	 // 这里先 校验下,  如果 刚刚释放锁成功, 那么 (xxx0 + 0001) & 0001 != 0
 	 // 否则, 刚刚释放锁的动作是失败的,  肯定是 对 【已经是放过】的锁做了【再次释放】
+	 //
+	 // todo 外面一进来什么都不管，先做了 减掉 【锁定】 标识, 那么这里把 【锁定】 标识 加回来， 再判断 没有被减掉之前的 标识
 	if (new+mutexLocked)&mutexLocked == 0 {
 		throw("sync: unlock of unlocked mutex")
 	}
@@ -589,9 +593,11 @@ func (m *Mutex) unlockSlow(new int32) {
 			直接将锁的拥有权传给等待队列中的第一个g.
 
         注意:
-		todo 此时state的mutexLocked还没有加锁，唤醒的goroutine会设置它
-        在此期间，如果有新的goroutine来请求锁， 因为mutex处于饥饿状态， mutex还是被认为处于锁状态，
-        新来的goroutine不会把锁抢过去.
+		todo 此时state的mutexLocked还没有加锁，被唤醒的g 会去接着进入 Lock() 来设置它
+
+		todo 之前某个G在调用 Lock() 时竞争不到锁而休眠的会被卡在调用  runtime_SemacquireMutex() 的逻辑处, 现在被唤醒后会接着往下走 ..
+
+        在此期间，如果有新的goroutine来请求锁， 因为mutex处于饥饿状态， 新来的goroutine不会把锁抢过去.
 		 */
 		runtime_Semrelease(&m.sema, true, 1)
 	}
