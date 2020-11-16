@@ -53,7 +53,7 @@ func sellock(scases []scase, lockorder []uint16) {
 		c0 := scases[o].c
 		if c0 != nil && c0 != c {
 			c = c0
-			lock(&c.lock)
+			lock(&c.lock)  // select 逐个 锁住 chan
 		}
 	}
 }
@@ -75,7 +75,7 @@ func selunlock(scases []scase, lockorder []uint16) {
 		if i > 0 && c == scases[lockorder[i-1]].c {
 			continue // will unlock it on the next iteration
 		}
-		unlock(&c.lock)
+		unlock(&c.lock)  // select 逐个 解锁  chan
 	}
 }
 
@@ -96,12 +96,12 @@ func selparkcommit(gp *g, _ unsafe.Pointer) bool {
 			// sudogs may have the same channel, we unlock
 			// only after we've passed the last instance
 			// of a channel.
-			unlock(&lastc.lock)
+			unlock(&lastc.lock) // select 逐个 解锁  chan
 		}
 		lastc = sg.c
 	}
 	if lastc != nil {
-		unlock(&lastc.lock)
+		unlock(&lastc.lock) // select  解锁  lastc chan
 	}
 	return true
 }
@@ -274,8 +274,8 @@ func selectgo(cas0 *scase, order0 *uint16, ncases int) (int, bool) {
 		}
 	}
 
-	// lock all the channels involved in the select   锁定 select 中涉及的所有 chan
-	sellock(scases, lockorder)
+	// lock all the channels involved in the select
+	sellock(scases, lockorder) // 锁定 select 中涉及的所有 chan
 
 	var (
 		gp     *g
@@ -348,7 +348,7 @@ loop:
 	}
 
 	if dfl != nil {
-		selunlock(scases, lockorder)
+		selunlock(scases, lockorder) // select 逐个 解锁  chan
 		casi = dfli
 		cas = dfl
 		goto retc
@@ -396,7 +396,7 @@ loop:
 	gopark(selparkcommit, nil, waitReasonSelect, traceEvGoBlockSelect, 1)
 	gp.activeStackChans = false
 
-	sellock(scases, lockorder)
+	sellock(scases, lockorder)  // 锁定 select 中涉及的所有 chan
 
 	gp.selectDone = 0
 	sg = (*sudog)(gp.param)
@@ -481,7 +481,7 @@ loop:
 		}
 	}
 
-	selunlock(scases, lockorder)
+	selunlock(scases, lockorder) // select 逐个 解锁  chan
 	goto retc
 
 bufrecv:
@@ -507,7 +507,7 @@ bufrecv:
 		c.recvx = 0
 	}
 	c.qcount--
-	selunlock(scases, lockorder)
+	selunlock(scases, lockorder) // select 逐个 解锁  chan
 	goto retc
 
 bufsend:
@@ -526,12 +526,12 @@ bufsend:
 		c.sendx = 0
 	}
 	c.qcount++
-	selunlock(scases, lockorder)
+	selunlock(scases, lockorder) // select 逐个 解锁  chan
 	goto retc
 
 recv:
 	// can receive from sleeping sender (sg)
-	recv(c, sg, cas.elem, func() { selunlock(scases, lockorder) }, 2)
+	recv(c, sg, cas.elem, func() { selunlock(scases, lockorder) }, 2) // select 逐个 解锁  chan
 	if debugSelect {
 		print("syncrecv: cas0=", cas0, " c=", c, "\n")
 	}
@@ -540,7 +540,7 @@ recv:
 
 rclose:
 	// read at end of closed channel
-	selunlock(scases, lockorder)
+	selunlock(scases, lockorder) // select 逐个 解锁  chan
 	recvOK = false
 	if cas.elem != nil {
 		typedmemclr(c.elemtype, cas.elem)
@@ -558,7 +558,7 @@ send:
 	if msanenabled {
 		msanread(cas.elem, c.elemtype.size)
 	}
-	send(c, sg, cas.elem, func() { selunlock(scases, lockorder) }, 2)
+	send(c, sg, cas.elem, func() { selunlock(scases, lockorder) }, 2) // select 逐个 解锁  chan
 	if debugSelect {
 		print("syncsend: cas0=", cas0, " c=", c, "\n")
 	}
@@ -574,7 +574,7 @@ retc:
 
 sclose:
 	// send on closed channel
-	selunlock(scases, lockorder)
+	selunlock(scases, lockorder)  // select 逐个 解锁  chan
 	panic(plainError("send on closed channel"))
 }
 

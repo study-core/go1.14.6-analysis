@@ -408,7 +408,7 @@ func sendDirect(t *_type, sg *sudog, src unsafe.Pointer) {
 	typeBitsBulkBarrier(t, uintptr(dst), uintptr(src), t.size)
 	// No need for cgo write barrier checks because dst is always
 	// Go memory.
-	memmove(dst, src, t.size)
+	memmove(dst, src, t.size)  // src 拷贝数据 到 dst，   src => dst
 }
 
 func recvDirect(t *_type, sg *sudog, dst unsafe.Pointer) {
@@ -417,7 +417,7 @@ func recvDirect(t *_type, sg *sudog, dst unsafe.Pointer) {
 	// operation.
 	src := sg.elem
 	typeBitsBulkBarrier(t, uintptr(dst), uintptr(src), t.size)
-	memmove(dst, src, t.size)
+	memmove(dst, src, t.size)  // src 拷贝数据 到 dst，   src => dst
 }
 
 
@@ -574,6 +574,10 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 		if ep != nil {
 			typedmemclr(c.elemtype, ep)
 		}
+
+		// todo 当尝试从一个已经 close 的 chan 读数据的时候，返回 （selected=true, received=false），我们通过 received = false 即可知道 channel 是否 close
+		//
+		//  就是 会返回 a, ok := <- chan  =>  a == nil,  ok == false
 		return true, false
 	}
 
@@ -586,7 +590,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 		//
 		//
 		// 找到了一个等待发送者. 表示 channel 无缓冲区  或者  缓冲区已满, 这两种情况需要分别处理(为了保证入出队顺序一致)
-		recv(c, sg, ep, func() { unlock(&c.lock) }, 3)
+		recv(c, sg, ep, func() { unlock(&c.lock) }, 3)  // todo recv() 里面最终调用 recvDirect() 函数把元素直接复制 给 接收者
 
 		// 把数据交给接收者并唤醒了G后, 就可以从chanrecv返回了
 		return true, true
@@ -703,7 +707,7 @@ func recv(c *hchan, sg *sudog, ep unsafe.Pointer, unlockf func(), skip int) {
 		}
 		if ep != nil {
 			// copy data from sender
-			recvDirect(c.elemtype, sg, ep)
+			recvDirect(c.elemtype, sg, ep)  // todo 调用 recvDirect() 函数把元素直接复制给接收者
 		}
 
 	// 如果有缓冲区代表缓冲区已满
