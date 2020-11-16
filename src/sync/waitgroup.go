@@ -120,7 +120,7 @@ func (wg *WaitGroup) Add(delta int) {
 
 
 	if w != 0 && delta > 0 && v == int32(delta) {
-		panic("sync: WaitGroup misuse: Add called concurrently with Wait")  // WaitGroup滥用： Add 与 Wait 并发调用
+		panic("sync: WaitGroup misuse: Add called concurrently with Wait")  // todo WaitGroup滥用： Add 与 Wait 并发调用
 	}
 
 	//	经过累加后， 此时， counter >= 0
@@ -154,10 +154,10 @@ func (wg *WaitGroup) Add(delta int) {
 	// 此时, counter 一定等于0, 而waiter一定大于0 (内部维护waiter, 不会出现小于0的情况),  先把counter置为0， 再释放waiter个数的信号量
 	// Reset waiters count to 0.
 
-	//  todo 走到这里了, 说明 所有 counter 都执行了, 需要将  state 也就是 counter|waiter 的复合值 直接  清空,  不然 Wait() 中就会 panic 拉
+	//  todo 走到这里了, 说明 所有 counter 都执行了, 需要将  state 也就是 counter|waiter 的复合值 直接  清空 (清空 WaitGroup.state1[0] 和 WaitGroup.state1[1] 的值),  不然 Wait() 中就会 panic 拉
 	*statep = 0
-	for ; w != 0; w-- {
-		runtime_Semrelease(semap, false, 0)  // 释放信号量， 执行一次释放一个， 唤醒一个等待者
+	for ; w != 0; w-- {  // 逐个 释放被阻塞的 G (waiter 个 G)
+		runtime_Semrelease(semap, false, 0)  // 释放信号量， 执行一次释放一个， 唤醒一个 等待者
 	}
 }
 
@@ -202,7 +202,7 @@ func (wg *WaitGroup) Wait() {
 				// otherwise concurrent Waits will race with each other.
 				race.Write(unsafe.Pointer(semap))
 			}
-			runtime_Semacquire(semap)   // 累加成功后， 等待信号量唤醒自己
+			runtime_Semacquire(semap)   // 累加成功后， 等待信号量唤醒自己 (阻塞当前G)
 			if *statep != 0 {  // todo 能走到这里, 说明有问题了,  因为 state 的值 在 Add 中 会被 清空的
 				panic("sync: WaitGroup is reused before previous Wait has returned")   // 在先前的Wait返回之前，WaitGroup被重用
 			}
