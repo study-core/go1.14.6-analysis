@@ -606,7 +606,7 @@ func deferreturn(arg0 uintptr) {  // todo 在 return 前调用 defer 时 被调�
 	// stack, because the stack trace can be incorrect in that case - see
 	// issue #8153).
 	_ = fn.fn
-	jmpdefer(fn, uintptr(unsafe.Pointer(&arg0)))
+	jmpdefer(fn, uintptr(unsafe.Pointer(&arg0)))  // todo 汇编执行 defer 调用
 }
 
 // Goexit terminates the goroutine that calls it. No other goroutine is affected.
@@ -925,7 +925,9 @@ func reflectcallSave(p *_panic, fn, arg unsafe.Pointer, argsize uint32) {
 	}
 }
 
-// The implementation of the predeclared function panic.  todo  预定义函数 panic() 的实现
+// The implementation of the predeclared function panic.  todo  预定义函数 panic() 的实现   panic内置函数的实现
+//
+// 编译器会将关键字 panic 转换成 runtime.gopanic()
 func gopanic(e interface{}) {
 	gp := getg()
 	if gp.m.curg != gp {
@@ -970,7 +972,7 @@ func gopanic(e interface{}) {
 	addOneOpenDeferFrame(gp, getcallerpc(), unsafe.Pointer(getcallersp()))
 
 
-	// 在循环中不断从当前 Goroutine 的 _defer 中链表获取 runtime._defer 并调用 runtime.reflectcall() 运行延迟调用函数
+	// todo 在循环中不断从当前 Goroutine 的 _defer 中链表获取 runtime._defer 并调用 runtime.reflectcall() 运行延迟调用函数
 	for {
 		d := gp._defer
 		if d == nil {
@@ -1036,7 +1038,7 @@ func gopanic(e interface{}) {
 			freedefer(d)
 		}
 
-		// 恢复程序的 recover 分支中的代码
+		// todo 恢复程序的 recover 分支中的代码    (该字段会在 gorecover() 中被修改. 然后再回到 gopanic() 中处理 recover 的逻辑)
 		if p.recovered {
 			gp._panic = p.link
 			if gp._panic != nil && gp._panic.goexit && gp._panic.aborted {
@@ -1093,7 +1095,7 @@ func gopanic(e interface{}) {
 				gp.sig = 0
 			}
 
-			// 它从 runtime._defer 结构体中取出了程序计数器 pc 和栈指针 sp 并调用 runtime.recovery 函数触发 Goroutine 的调度，调度之前会准备好 sp、pc 以及函数的返回值
+			// todo 它从 runtime._defer 结构体中取出了程序计数器 pc 和栈指针 sp 并调用 runtime.recovery 函数触发 Goroutine 的调度，调度之前会准备好 sp、pc 以及函数的返回值
 
 			// Pass information about recovering frame to recovery.
 			gp.sigcode0 = uintptr(sp)
@@ -1134,8 +1136,19 @@ func getargp(x int) uintptr {
 //
 //       在正常情况下，它会修改 runtime._panic 结构体的 recovered 字段，runtime.gorecover 函数本身不包含恢复程序的逻辑，程序的恢复也是由 runtime.gopanic 函数负责的.
 //
+//	todo recover内置函数 实现
+//
+//  编译器会将关键字 recover 转换成 runtime.gorecover()
+//
+//
 //go:nosplit
 func gorecover(argp uintptr) interface{} {
+
+	// 这个函数的实现非常简单，如果当前 Goroutine 没有调用 panic，那么该函数会直接返回 nil，todo 这也是崩溃恢复   ·不在 defer 中调用·  会失效的原因
+
+	// todo 在正常情况下，它会修改 runtime._panic 结构体的 recovered 字段，
+	// 		runtime.gorecover 函数本身不包含恢复程序的逻辑，程序的恢复也是由 runtime.gopanic 函数负责的
+
 	// Must be in a function running as part of a deferred call during the panic.
 	// Must be called from the topmost function of the call
 	// (the function used in the defer statement).
@@ -1143,7 +1156,7 @@ func gorecover(argp uintptr) interface{} {
 	// Compare against argp reported by caller.
 	// If they match, the caller is the one who can recover.
 	gp := getg()
-	p := gp._panic
+	p := gp._panic  // todo 只有在 defer 里面调用时,  才可以知道 gp 是否存在 panic. 否则 找不到恰当的时机 查看 gp是否具备 panic
 	if p != nil && !p.goexit && !p.recovered && argp == uintptr(p.argp) {
 		p.recovered = true
 		return p.arg
@@ -1187,7 +1200,7 @@ var paniclk mutex
 // Unwind the stack after a deferred function calls recover
 // after a panic. Then arrange to continue running as though
 // the caller of the deferred function returned normally.
-func recovery(gp *g) {
+func recovery(gp *g) {  // 触发 Goroutine 的调度，调度之前会准备好 sp、pc 以及函数的返回值
 	// Info about defer passed in G struct.
 	sp := gp.sigcode0
 	pc := gp.sigcode1

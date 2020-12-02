@@ -313,7 +313,7 @@ func rt0_go()  // todo 这个是 `go程序入口点`     (有很多种平台的 
 //
 //
 //
-// todo 在 deferproc() 的最后被调用，以向调用 Go函数 发出信号，告知它不应跳转到 deferreturn() .  在 asm_*.s 中实现     (其实在 deferStack() 中最后也被调用)
+// todo 在 deferproc() 的最后被调用，以向调用 Go 函数 发出信号，告知它不应跳转到 deferreturn() .  在 asm_*.s 中实现     (其实在 deferStack() 中最后也被调用)
 func return0()
 
 // in asm_*.s

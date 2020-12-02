@@ -386,7 +386,7 @@ func goready(gp *g, traceskip int) {
 
 	// 切换到 g0 调用ready函数, 调用 完切换 回来 当前 g
 	systemstack(func() {
-		ready(gp, traceskip, true)
+		ready(gp, traceskip, true)  // goready() 中被调用
 	})
 }
 
@@ -494,6 +494,15 @@ func releaseSudog(s *sudog) {
 // the same function in the address space). To be safe, don't use the
 // results of this function in any == expression. It is only safe to
 // use the result as an address at which to start executing code.
+//
+//
+// 	todo funcPC() 返回  函数f的入口PC
+//	假定f是一个func值.  否则，行为是不确定的.
+//
+// 	注意：	在带有 `插件<plugin>` 的程序中，funcPC() 可以为同一函数返回不同的值（因为在地址空间中实际上存在同一函数的多个副本）.
+// 			为了安全起见，请勿在任何 `==` 表达式中使用此函数的结果. 仅将结果用作开始执行代码的地址是安全的.
+//
+//
 //go:nosplit
 func funcPC(f interface{}) uintptr {
 	return *(*uintptr)(efaceOf(&f).data)
@@ -1304,7 +1313,7 @@ func mstart() {
 	// This is the g0, so we can also call go:systemstack
 	// functions, which check stackguard1.
 	_g_.stackguard1 = _g_.stackguard0
-	mstart1()
+	mstart1()  // todo 这个方法会被 阻塞
 
 	// Exit this thread.
 	switch GOOS {
@@ -1390,7 +1399,7 @@ func mstartm0() {
 // will release the P before exiting.
 //
 //go:yeswritebarrierrec
-func mexit(osStack bool) {
+func mexit(osStack bool) { // m 退出
 	g := getg()
 	m := g.m
 
@@ -1448,6 +1457,8 @@ found:
 		// freeWait is 0. Note that the free list must not be linked
 		// through alllink because some functions walk allm without
 		// locking, so may be using alllink.
+		//
+		// 将 m 放到 sched 的 freem链表上. (这些都是调用 mexit() 的 m)
 		m.freelink = sched.freem
 		sched.freem = m
 	}
@@ -2025,10 +2036,10 @@ func newm(fn func(), _p_ *p) {
 		unlock(&newmHandoff.lock)
 		return
 	}
-	newm1(mp)  // 真正的分配os thread
+	newm1(mp)  // 真正的分配os thread (给M分配内核线程)
 }
 // 真正的分配os thread
-func newm1(mp *m) {
+func newm1(mp *m) { // (给M分配内核线程)
 
 	// 对cgo的处理
 	if iscgo {
@@ -2049,7 +2060,7 @@ func newm1(mp *m) {
 	}
 	execLock.rlock() // Prevent process clone.
 
-	// 创建一个系统线程，并且传入该 mp 绑定的 g0 的栈顶指针
+	// 创建一个系统线程 (内核线程) ，并且传入该 mp 绑定的 g0 的栈顶指针
 	// 让系统线程执行 mstart() 函数，后面的逻辑都在 mstart() 函数中
 	newosproc(mp)
 	execLock.runlock()
@@ -2514,7 +2525,7 @@ top:
 
 	if fingwait && fingwake {
 		if gp := wakefing(); gp != nil {  // 如果有析构器待运行则使用"运行析构器的G"
-			ready(gp, 0, true)
+			ready(gp, 0, true)  // findrunnable() 快速找一个 G 是被调用
 		}
 	}
 	if *cgo_yield != nil {
@@ -2920,7 +2931,7 @@ func schedule() {
 		throw("schedule: holding locks")
 	}
 
-	// 如果当前GC需要停止整个世界（STW), 则调用stopm休眠当前的M
+	// todo 如果当前 GC 需要 停止整个世界（STW), 则调用 stopm 休眠 当前M
 	if _g_.m.lockedg != 0 {
 		// 休眠 当前 M
 		// 停止执行锁定到g的当前m，直到g可再次运行   todo  (该函数 会阻塞)
@@ -2982,7 +2993,7 @@ top:
 		}
 	}
 
-	// 如果当前GC正在标记阶段, 则查找有没有待运行的GC Worker, GC Worker也是一个G
+	// 如果当前GC正在 标记阶段 (mark), 则查找 有没有待运行的 GC Worker, GC Worker也是一个G
 	if gp == nil && gcBlackenEnabled != 0 {
 		gp = gcController.findRunnableGCWorker(_g_.m.p.ptr())  // todo 在 【并行 gc】 中, 后台为 每个P启动了一个后台标记任务, 但是可以同时工作的只有25%, 这个逻辑在协程 M 获取 G 时调用
 		tryWakeP = tryWakeP || gp != nil
@@ -3002,12 +3013,14 @@ top:
 		}
 	}
 	if gp == nil {
-		gp, inheritTime = runqget(_g_.m.p.ptr())  // 从P的本地运行队列中获取G, 调用runqget函数
+		gp, inheritTime = runqget(_g_.m.p.ptr())  // todo 从P的本地运行队列中获取G, 调用runqget函数
 		// We can see gp != nil here even if the M is spinning,
 		// if checkTimers added a local goroutine via goready.
 	}
 	if gp == nil {
 		// todo 快速获取G 失败时, 调用 findrunnable() 函数 获取待运行的G, 会阻塞到获取成功为止  【重要】
+		//
+		// 尝试从  其他P 窃取，从 P本地 或 全局队列 获取 G，轮询网络
 		gp, inheritTime = findrunnable() // blocks until work is available
 	}
 
@@ -3202,7 +3215,10 @@ func park_m(gp *g) {  // 只有 gopark() 会调用
 		traceGoPark(_g_.m.waittraceev, _g_.m.waittraceskip)
 	}
 
-	casgstatus(gp, _Grunning, _Gwaiting)  // 把G的状态从运行中(_Grunning)改为等待中(_Gwaiting)
+	// 把G的状态从运行中(_Grunning)改为等待中(_Gwaiting)   todo 这时候的 g 是 【游离态的】, 只有当在被 调用 goready() 是才会将状态改为 _Grunnable 并放回 p 的 可运行g队列中
+	//
+	// g 为什么是 游离态的 ?? 因为 g 之前是从 p 的 可运行g队列中 取出来的.
+	casgstatus(gp, _Grunning, _Gwaiting)
 
 	dropg() // 解除 g 和 m 的关系
 
@@ -3377,7 +3393,7 @@ func goexit0(gp *g) {
 
 	_g_ := getg()
 
-	casgstatus(gp, _Grunning, _Gdead)  // 把G的状态由运行中(_Grunning)改为已中止(_Gdead)
+	casgstatus(gp, _Grunning, _Gdead)  // todo 把G的状态由运行中(_Grunning)改为已中止(_Gdead)
 	if isSystemGoroutine(gp, false) {
 		atomic.Xadd(&sched.ngsys, -1)
 	}
@@ -4105,7 +4121,7 @@ func newproc1(fn *funcval, argp unsafe.Pointer, narg int32, callergp *g, callerp
 		throw("newproc1: newg missing stack")
 	}
 
-	// 此时获取的 G 一定得是 `_Gdead` 的
+	// todo 此时获取的 G 一定得是 `_Gdead` 的
 	if readgstatus(newg) != _Gdead {
 		throw("newproc1: new g is not Gdead")
 	}
@@ -4168,9 +4184,9 @@ func newproc1(fn *funcval, argp unsafe.Pointer, narg int32, callergp *g, callerp
 
 	// 设置 sched.pc 等于目标函数的地址, 查看 gostartcallfn 和 gostartcall
 	//
-	// 保存goexit的地址到sched.pc，后面会调节 goexit 作为任务函数返回后执行的地址，所以goroutine结束后会调用goexit.
+	// todo 保存goexit的地址到sched.pc，后面会调节 goexit 作为任务函数返回后执行的地址，所以goroutine结束后会调用goexit.
 	//
-	newg.sched.pc = funcPC(goexit) + sys.PCQuantum // +PCQuantum so that previous instruction is in same function
+	newg.sched.pc = funcPC(goexit) + sys.PCQuantum // +PCQuantum so that previous instruction is in same function  todo  注意这个
 	// sched.g 保存当前 新的 G
 	newg.sched.g = guintptr(unsafe.Pointer(newg))
 	// 将当前的pc压入栈，保存g的任务函数为pc
@@ -4202,7 +4218,7 @@ func newproc1(fn *funcval, argp unsafe.Pointer, narg int32, callergp *g, callerp
 		_p_.goidcacheend = _p_.goidcache + _GoidCacheBatch
 	}
 
-	// 生成唯一的goid
+	// todo 生成唯一的goid
 	newg.goid = int64(_p_.goidcache)
 	_p_.goidcache++
 
@@ -4788,7 +4804,7 @@ func setcpuprofilerate(hz int32) {
 
 // init initializes pp, which may be a freshly allocated p or a
 // previously destroyed p, and transitions it to status _Pgcstop.
-func (pp *p) init(id int32) {
+func (pp *p) init(id int32) {  // 初始化P
 	pp.id = id
 	pp.status = _Pgcstop
 	pp.sudogcache = pp.sudogbuf[:0]
@@ -4835,14 +4851,14 @@ func (pp *p) destroy() {
 		pp.runnext = 0
 	}
 	if len(pp.timers) > 0 {
-		plocal := getg().m.p.ptr()
+		plocal := getg().m.p.ptr()  // 获取 当前G 的P
 		// The world is stopped, but we acquire timersLock to
 		// protect against sysmon calling timeSleepUntil.
 		// This is the only case where we hold the timersLock of
 		// more than one P, so there are no deadlock concerns.
 		lock(&plocal.timersLock)
 		lock(&pp.timersLock)
-		moveTimers(plocal, pp.timers)
+		moveTimers(plocal, pp.timers)  // 将 pp 中的 定时器 转移到  plocal  这个p上
 		pp.timers = nil
 		pp.numTimers = 0
 		pp.adjustTimers = 0
@@ -4954,7 +4970,7 @@ func procresize(nprocs int32) *p {
 	for i := old; i < nprocs; i++ {
 		pp := allp[i]
 		if pp == nil {
-			pp = new(p)
+			pp = new(p) // 创建P
 		}
 		pp.init(i)
 		atomicstorep(unsafe.Pointer(&allp[i]), unsafe.Pointer(pp))

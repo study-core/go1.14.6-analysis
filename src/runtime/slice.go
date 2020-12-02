@@ -32,7 +32,14 @@ func panicmakeslicelen() {
 func panicmakeslicecap() {
 	panic(errorString("makeslice: cap out of range"))
 }
-
+//
+// makemap 和 makeslice 的区别，带来一个不同点：当 map 和 slice 作为函数参数时，在函数参数内部对 map 的操作会影响 map 自身；而对 slice 却不会.
+//
+// 主要原因： 函数返回不一样. *hmap，它是一个指针，而我们之前讲过的 makeslice 函数返回的是 Slice 结构体
+//
+// Go 语言中的函数传参都是值传递，在函数内部，参数会被 copy 到本地。*hmap指针 copy 完之后，仍然指向同一个 map，因此函数内部对 map 的操作会影响实参.
+// 		而 slice 被 copy 后，会成为一个新的 slice，对它进行的操作不会影响到实参
+//
 func makeslice(et *_type, len, cap int) unsafe.Pointer {
 	mem, overflow := math.MulUintptr(et.size, uintptr(cap))
 	if overflow || mem > maxAlloc || len < 0 || len > cap {

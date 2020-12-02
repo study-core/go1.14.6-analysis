@@ -727,7 +727,7 @@ type m struct {  // todo M 里面 有 P 和 G
 	waittraceskip int
 	startingtrace bool
 	syscalltick   uint32
-	freelink      *m // on sched.freem
+	freelink      *m // on sched.freem     todo mexit() 释放了 线程的 m， 的链表
 
 	// these are here because they are too large to be on the stack
 	// of low-level NOSPLIT functions.
@@ -1019,6 +1019,8 @@ type schedt struct {
 
 	// freem is the list of m's waiting to be freed when their
 	// m.exited is set. Linked through m.freelink.
+	//
+	// freem  是设置了 `m.exited` 时等待释放的m列表.  通过 `m.freelink` 链接   todo mexit() 释放了线程的m， 链表结构
 	freem *m
 
 	/**
@@ -1187,6 +1189,8 @@ todo 这个是 defer 关键字 的定义
 // and for heap defers, marked.
 type _defer struct {
 	siz     int32 // includes both arguments and results
+
+	// 是否已经 执行过了 标识
 	started bool
 	heap    bool
 	// openDefer indicates that this _defer is for a frame with open-coded
@@ -1246,7 +1250,9 @@ type _panic struct {
 	link      *_panic        // link to earlier panic
 	pc        uintptr        // where to return to in runtime if this panic is bypassed     	如果忽略了此紧急情况，将在运行时返回哪里
 	sp        unsafe.Pointer // where to return to in runtime if this panic is bypassed			如果忽略了此紧急情况，将在运行时返回哪里
-	recovered bool           // whether this panic is over										panic是否结束
+
+	// 当前 panic 是否被 recover 掉
+	recovered bool           // whether this panic is over										panic 是否结束
 	aborted   bool           // the panic was aborted											恐慌中止了
 	goexit    bool
 

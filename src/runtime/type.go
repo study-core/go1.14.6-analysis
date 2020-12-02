@@ -432,20 +432,30 @@ type maptype struct {
 	flags      uint32
 }
 
+// 将ptr存储到 key 而不是 key本身
+//
 // Note: flag values must match those used in the TMAP case
 // in ../cmd/compile/internal/gc/reflect.go:dtypesym.
 func (mt *maptype) indirectkey() bool { // store ptr to key instead of key itself   将ptr存储到 key 而不是 key本身
 	return mt.flags&1 != 0
 }
+
+// 将ptr存储到 elem 而不是elem本身
 func (mt *maptype) indirectelem() bool { // store ptr to elem instead of elem itself	将ptr存储到elem而不是elem本身
 	return mt.flags&2 != 0
 }
+
+// 如果所有 key 的 k == k，则为true
 func (mt *maptype) reflexivekey() bool { // true if k==k for all keys			如果所有 key 的 k == k，则为true
 	return mt.flags&4 != 0
 }
+
+// 如果 我们需要在覆盖时更新 key，则为true
 func (mt *maptype) needkeyupdate() bool { // true if we need to update key on an overwrite		如果 我们需要在覆盖时更新 key，则为true
 	return mt.flags&8 != 0
 }
+
+// 如果 哈希函数 可能出现 panic，则为true
 func (mt *maptype) hashMightPanic() bool { // true if hash function might panic		如果 哈希函数 可能出现 panic，则为true
 	return mt.flags&16 != 0
 }

@@ -317,6 +317,12 @@ func reflect_typedslicecopy(elemType *_type, dst, src slice) int {
 // If the caller knows that typ has pointers, it can alternatively
 // call memclrHasPointers.
 //
+// `typedmemclr()` 清除类型为typ的ptr的类型化内存
+// 					ptr处的内存必须已经初始化 (因此处于类型安全状态).
+// 					如果是第一次初始化内存，请参阅 memclrNoHeapPointers
+//
+//	如果调用者知道typ有指针，则可以调用 memclrHasPointers
+//
 //go:nosplit
 func typedmemclr(typ *_type, ptr unsafe.Pointer) {
 	if typ.ptrdata != 0 {
@@ -342,6 +348,11 @@ func reflect_typedmemclrpartial(typ *_type, ptr unsafe.Pointer, off, size uintpt
 // The caller must ensure that the type of the object at ptr has
 // pointers, usually by checking typ.ptrdata. However, ptr
 // does not have to point to the start of the allocation.
+//
+// memclrHasPointers()  从 ptr 开始 清除 n 个byte 类型的内存
+//
+//						调用者 通常必须通过检查 typ.ptrdata 来确保 ptr 处的对象类型具有指针.
+// 						但是，ptr不必指向分配的开始
 //
 //go:nosplit
 func memclrHasPointers(ptr unsafe.Pointer, n uintptr) {

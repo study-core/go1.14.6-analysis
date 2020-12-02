@@ -378,7 +378,7 @@ func send(c *hchan, sg *sudog, ep unsafe.Pointer, unlockf func(), skip int) {
 		// 等待 接收的 sudog.elem 是指向接收目标的内存的指针, 如果是 接收目标是 `_` 则elem是nil, 可以省略复制
 		// 等待 发送的 sudog.elem 是指向来源目标的内存的指针
 	}
-	gp := sg.g
+	gp := sg.g  // sudog 中的 g
 	unlockf()
 	gp.param = unsafe.Pointer(sg)
 	if sg.releasetime != 0 {

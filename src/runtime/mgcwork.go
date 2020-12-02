@@ -78,7 +78,7 @@ type gcWork struct {
 	// next.
 	//
 	// Invariant: Both wbuf1 and wbuf2 are nil or neither are.
-	wbuf1, wbuf2 *workbuf
+	wbuf1, wbuf2 *workbuf  // todo 这个是 三色标识 的队列 ？？
 
 	// Bytes marked (blackened) on this gcWork. This is aggregated
 	// into work.bytesMarked by dispose.

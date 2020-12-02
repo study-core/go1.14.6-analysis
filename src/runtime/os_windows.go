@@ -62,11 +62,15 @@ var (
 	// Following syscalls are available on every Windows PC.
 	// All these variables are set by the Windows executable
 	// loader before the Go program starts.
+	//
+	// 每台 Windows PC 上均可使用以下syscall
+	// 在Go程序启动之前，所有这些变量都由Windows可执行加载器设置
+	//
 	_AddVectoredExceptionHandler,
 	_CloseHandle,
 	_CreateEventA,
 	_CreateIoCompletionPort,
-	_CreateThread,
+	_CreateThread,  // 创建一个 内核线程 <系统线程> 的标识
 	_CreateWaitableTimerA,
 	_DuplicateHandle,
 	_ExitProcess,
@@ -786,8 +790,11 @@ func semacreate(mp *m) {
 // function is called by newosproc0, so it is also required to
 // operate without stack guards.
 //
+//	可以与  `m.p == nil`  一起运行，因此不允许写入障碍.
+// 	这个该函数由 newosproc0() 调用，因此也需要在没有堆栈保护的情况下进行操作
 //
-// 分配一个系统线程，且完成 g0 和 g0上的栈分配
+//
+// 分配一个系统线程 (内核线程)，且完成 g0 和 g0上的栈分配
 // 传入 mstart() 函数，让线程执行 mstart
 //
 //
@@ -805,6 +812,12 @@ func newosproc(mp *m) {
 			// concurrently with ExitProcess. If this
 			// happens, just freeze this thread and let
 			// the process exit. See issue #18253.
+			//
+			// 如果与 ExitProcess() 并发调用，CreateThread() 可能会失败.
+			// 如果发生这种情况，只需 冻结该线程 并退出进程即可.
+			//
+			// 请参阅问题＃18253.
+			//
 			lock(&deadlock)
 			lock(&deadlock)
 		}
@@ -907,6 +920,11 @@ func unminit() {
 
 // Calling stdcall on os stack.
 // May run during STW, so write barriers are not allowed.
+//
+// 在操作系统堆栈上调用 stdcall()
+// 可能在STW期间运行，因此不允许写入障碍
+//
+//
 //go:nowritebarrier
 //go:nosplit
 func stdcall(fn stdFunction) uintptr {

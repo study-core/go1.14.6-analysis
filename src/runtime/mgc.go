@@ -2582,7 +2582,7 @@ func gcSweep(mode gcMode) {
 	lock(&sweep.lock)
 	if sweep.parked {
 		sweep.parked = false
-		ready(sweep.g, 0, true)
+		ready(sweep.g, 0, true)  // gc 的 sweep 工作结束后, 被调用
 	}
 	unlock(&sweep.lock)
 }
