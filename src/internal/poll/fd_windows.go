@@ -290,20 +290,23 @@ func startServer() {
 
 // FD is a file descriptor. The net and os packages embed this type in
 // a larger type representing a network connection or OS file.
+//
 type FD struct {
 	// Lock sysfd and serialize access to Read and Write methods.
 	fdmu fdMutex
 
 	// System file descriptor. Immutable until Close.
-	Sysfd syscall.Handle
+	Sysfd syscall.Handle   // todo 真正的系统文件描述符
 
 	// Read operation.
 	rop operation
 	// Write operation.
 	wop operation
 
+	//  pollDesc 是底层事件驱动的封装，netFD 通过它来完成各种 I/O 相关的操作
+	//
 	// I/O poller.
-	pd pollDesc
+	pd pollDesc  // todo 对底层事件驱动的封装   (所有的 读写 超时 等操作都是通过调用 pollDesc 对应方法实现的)
 
 	// Used to implement pread/pwrite.
 	l sync.Mutex

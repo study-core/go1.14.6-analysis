@@ -111,6 +111,9 @@ const pollBlockSize = 4 * 1024
 //
 //go:notinheap
 type pollDesc struct {
+	//
+	// runtime.pollDesc 包含自身类型的一个指针，用来保存下一个 runtime.pollDesc 的地址，以此来实现链表，可以减少数据结构的大小，TODO 所有的 runtime.pollDesc 保存在 runtime.pollCache 结构中
+	//
 	link *pollDesc // in pollcache, protected by pollcache.lock
 
 	// The lock protects pollOpen, pollSetDeadline, pollUnblock and deadlineimpl operations.
@@ -128,6 +131,8 @@ type pollDesc struct {
 	everr   bool    // marks event scanning error happened
 	user    uint32  // user settable cookie
 
+	//  TODO 这里重点关注里面的 rg 和 wg，这里两个 uintptr "万能指针"类型，取值分别可能是 pdReady、pdWait、等待 file descriptor 就绪的G  也就是 g 数据结构以及 nil，它们是实现唤醒 goroutine 的关键
+
 	//  下面 8 个变量 被分为 4 组
 
 	rseq    uintptr // protects from stale read timers
@@ -141,7 +146,10 @@ type pollDesc struct {
 }
 
 
+//
 // 缓存 pollDesc 的缓存
+//
+// 因为 runtime.pollCache 是一个在 runtime 包里的全局变量，因此需要用一个互斥锁来避免 data race 问题，从它的名字也能看出这是一个用于缓存的数据结构，也就是用来提高性能的.
 type pollCache struct {
 	lock  mutex
 	first *pollDesc

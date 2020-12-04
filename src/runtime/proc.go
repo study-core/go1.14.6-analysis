@@ -2498,7 +2498,14 @@ func execute(gp *g, inheritTime bool) {
 // todo 查找  可执行的G
 //
 // 查找要执行的  可运行goroutine
-// 尝试从  其他P 窃取，从 P本地 或 全局队列 获取 G，轮询网络
+//
+// 从 本地P的可运行的G队列找
+// 从 调度器的可运行的G队列找
+// 从 轮询网络 获取可运行G
+// 从 其他P的可运行的G队列找
+//
+//
+// 最终还是获取不到G, 调用stopm休眠当前的M， todo 并 从跳回 `findrunnable()`函数入口处 重新尝试获取G
 func findrunnable() (gp *g, inheritTime bool) {
 	_g_ := getg()
 
@@ -3378,6 +3385,15 @@ func goexit1() {
 	 */
 }
 
+// goexit0() 做了几件事:
+//
+// 		G的状态变为_GDead，如果是系统G则更新全局计数器
+// 		重置G身上一系列的属性变量
+// 		解除M和G的互相引用关系
+// 		放置在本地P或全局的free goroutine队列
+// 		调度，寻找下一个可运行的goroutine
+//
+//
 // goexit continuation on g0.   // g0 上的 goexit() 延续
 func goexit0(gp *g) {
 
@@ -4839,6 +4855,8 @@ func (pp *p) init(id int32) {  // 初始化P
 // sched.lock must be held and the world must be stopped.
 func (pp *p) destroy() {
 	// Move all runnable goroutines to the global queue
+	//
+	// todo 将 P 中的 runq的G 全部转移到  schedt 的 runq中
 	for pp.runqhead != pp.runqtail {
 		// Pop from tail of local queue
 		pp.runqtail--
@@ -4846,10 +4864,14 @@ func (pp *p) destroy() {
 		// Push onto head of global queue
 		globrunqputhead(gp)
 	}
+
+	// P 的 next 的G， 也转移到 schedt 的runq中
 	if pp.runnext != 0 {
 		globrunqputhead(pp.runnext.ptr())
 		pp.runnext = 0
 	}
+
+	// 转移 定时器
 	if len(pp.timers) > 0 {
 		plocal := getg().m.p.ptr()  // 获取 当前G 的P
 		// The world is stopped, but we acquire timersLock to
@@ -4858,7 +4880,7 @@ func (pp *p) destroy() {
 		// more than one P, so there are no deadlock concerns.
 		lock(&plocal.timersLock)
 		lock(&pp.timersLock)
-		moveTimers(plocal, pp.timers)  // 将 pp 中的 定时器 转移到  plocal  这个p上
+		moveTimers(plocal, pp.timers)  // todo 将 pp 中的 定时器 转移到  plocal  这个p上
 		pp.timers = nil
 		pp.numTimers = 0
 		pp.adjustTimers = 0
@@ -4869,6 +4891,8 @@ func (pp *p) destroy() {
 	}
 	// If there's a background worker, make it runnable and put
 	// it on the global queue so it can clean itself up.
+	//
+	// 如果 P 中有 正在 GC 作业的 G， 那么将 该G 从 `_Gwaiting` 转变为 `_Grunnable`, 并 放到 schedt 的 runq 中
 	if gp := pp.gcBgMarkWorker.ptr(); gp != nil {
 		casgstatus(gp, _Gwaiting, _Grunnable)
 		if trace.enabled {
@@ -4884,9 +4908,13 @@ func (pp *p) destroy() {
 		wbBufFlush1(pp)
 		pp.gcw.dispose()
 	}
+
+	// 释放 P 中的  sudog
 	for i := range pp.sudogbuf {
 		pp.sudogbuf[i] = nil
 	}
+
+	// 释放 P 的 sudog 缓存
 	pp.sudogcache = pp.sudogbuf[:0]
 	for i := range pp.deferpool {
 		for j := range pp.deferpoolbuf[i] {
@@ -4894,6 +4922,8 @@ func (pp *p) destroy() {
 		}
 		pp.deferpool[i] = pp.deferpoolbuf[i][:0]
 	}
+
+	// 切换到 系统堆栈 执行  p 的 `mspancache` 和 `mcache` 内存释放
 	systemstack(func() {
 		for i := 0; i < pp.mspancache.len; i++ {
 			// Safe to call since the world is stopped.
@@ -4904,7 +4934,10 @@ func (pp *p) destroy() {
 	})
 	freemcache(pp.mcache)
 	pp.mcache = nil
+	// 转移 P 的 gFree 队列中的 G 到 schedt 的 gFree 队列
 	gfpurge(pp)
+
+	// 清空 P 的 traceProc 队列
 	traceProcFree(pp)
 	if raceenabled {
 		if pp.timerRaceCtx != 0 {
@@ -4926,7 +4959,7 @@ func (pp *p) destroy() {
 		pp.raceprocctx = 0
 	}
 	pp.gcAssistTime = 0
-	pp.status = _Pdead  // _Pdead 状态的 P 在任何流程都不会被处理, 最终被 GC 掉 todo (做法是 比较 p.status 从来不用 _Pdead )
+	pp.status = _Pdead  // _Pdead 状态的 P 在任何流程都不会被处理, 而  如果GOMAXPROCS增加，我们将重用 P.
 }
 
 // Change number of processors. The world is stopped, sched is locked.
@@ -5009,10 +5042,14 @@ func procresize(nprocs int32) *p {
 	}
 
 	// release resources from unused P's
+	//
+	//  释放掉 多余的P
 	for i := nprocs; i < old; i++ {
 		p := allp[i]
 		p.destroy()
 		// can't free P itself because it can be referenced by an M in syscall
+		//
+		// 不能释放 p 本身，因为他可能在 m 进入系统调用时被引用
 	}
 
 	// Trim allp.

@@ -48,6 +48,11 @@ func getg() *g
 //  		设置rdx寄存器为指向函数地址的指针(上下文)
 //  		调用指定的函数, 不会返回
 //
+//
+//  作用就是将当前线程的执行栈先切换到g0上
+//  然后将当前的goroutine（即执行完的goroutine对应的G实例）当成参数传给fn，
+//	在g0的栈上继续执行fn。等于换了个SP指针，然后继续执行goexit0.
+//
 func mcall(fn func(*g))
 
 // systemstack runs fn on a system stack.

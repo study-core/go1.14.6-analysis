@@ -121,6 +121,11 @@ const (
 	//
 	// The P is owned by the idle list or by whatever is
 	// transitioning its state. Its run queue is empty.
+	//
+	// _Pidle 表示未使用P来运行用户代码 或 调度程序。
+	//  	通常，它在空闲的P列表中，可供调度程序使用，但是它可能只是在其他状态之间转换。
+	//    	P由空闲列表或正在转换其状态的任何对象拥有。 它的 运行队列为空。
+	//
 	_Pidle = iota
 
 	// _Prunning means a P is owned by an M and is being used to
@@ -130,6 +135,13 @@ const (
 	// do), _Psyscall (when entering a syscall), or _Pgcstop (to
 	// halt for the GC). The M may also hand ownership of the P
 	// off directly to another M (e.g., to schedule a locked G).
+	//
+	// _Prunning 表示 P由M 拥有，并用于运行用户代码或调度程序。
+	// 仅拥有此 P的M允许从 _Prunning 更改P的状态。
+	// M可以将P转换为_Pidle（如果没有更多工作要做），_ Psyscall（进入系统调用时）或_Pgcstop（以停止GC）。
+	//
+	// M也可以将P的所有权直接移交给另一个M（例如，以调度锁定的G）。
+	//
 	_Prunning
 
 	// _Psyscall means a P is not running user code. It has
@@ -142,6 +154,12 @@ const (
 	// an M successfully CASes its original P back to _Prunning
 	// after a syscall, it must understand the P may have been
 	// used by another M in the interim.
+	//
+	// _Psyscall 表示P没有运行用户代码。
+	// 它与系统调用中的M有亲缘关系，但不属于它，并且可能被另一个M偷走。  todo 这类似于_Pidle，但是使用 轻量级转换并 保持 M 亲和力。
+	// 必须通过CAS离开 _Psyscall 才能窃取 或 重新获得P。
+	// 请注意，这存在ABA危险： todo 即使M在 syscall 之后成功将其原始P返回_Prunning，它也必须了解P可能已经 在此期间由另一个M使用。
+	//
 	_Psyscall
 
 	// _Pgcstop means a P is halted for STW and owned by the M
@@ -152,12 +170,23 @@ const (
 	//
 	// The P retains its run queue and startTheWorld will restart
 	// the scheduler on Ps with non-empty run queues.
+	//
+	// _Pgcstop 表示对 STW 暂停P 并由停止世界的M拥有.
+	// STW 的M甚至在_Pgcstop 中也继续使用其P.
+	// 从_Prunning 过渡到 _Pgcstop 会导致 M 释放 其P并停放.
+	// P 保留其运行队列，startTheWorld 将使用非空运行队列在Ps 上重新启动调度程序.
+	//
 	_Pgcstop
 
 	// _Pdead means a P is no longer used (GOMAXPROCS shrank). We
 	// reuse Ps if GOMAXPROCS increases. A dead P is mostly
 	// stripped of its resources, though a few things remain
 	// (e.g., trace buffers).
+	//
+	// _Pdead表示不再使用P（GOMAXPROCS缩小）
+	// 如果GOMAXPROCS增加，我们将重用P.  一个死掉的P大部分都被剥夺了资源，尽管还剩下一些东西
+	//（例如跟踪缓冲区）
+	//
 	_Pdead
 )
 
@@ -461,6 +490,9 @@ type stack struct {
 	hi uintptr
 }
 
+
+// TODO    P 和 M 之间是【多对多】的关系，P 和 G 之间是【一对多】的关系，他们的关联是易变的，由Golang的调度器完成调度
+
 /**
 可以看到如果 G 需要等待资源时,
 	会记录G的 运行状态 到 g.sched, 然后把状态改为等待中(_Gwaiting), 再让当前的 M 继续运行其他G.
@@ -588,6 +620,9 @@ type g struct {	// todo G 中有 M
 	gcAssistBytes int64
 }
 
+// M和内核线程之间是一对一的关系，一个M在其生命周期中，只会和一个内核线程关联，所以不会出现对内核线程的频繁切换
+//
+// Golang的运行时执行系统监控和垃圾回收等任务时候会导致创建M，M空闲时不会被销毁，而是放到一个调度器的空闲M列表中，等待与P关联，M默认数量为10000
 
 // todo M 的定义
 type m struct {  // todo M 里面 有 P 和 G
@@ -595,19 +630,19 @@ type m struct {  // todo M 里面 有 P 和 G
 	// 用于调度的特殊g, `调度` 和 `执行系统调用` 时会切换到这个g 【系统G】
 	//
 	// 每个M启动都有一个叫 g0 的系统堆栈，
-	// 		runtime通常使用systemstack、mcall 或asmcgocall 临时切换到系统堆栈，以执行必须不被抢占的任务、不得增加用户堆栈的任务或切换用户goroutines
+	// 		runtime通常使用 `systemstack()`、`mcall()` 或 `asmcgocall()` 临时 切换到 系统堆栈，以执行必须不被抢占的任务、不得增加用户堆栈的任务 或 切换用户goroutines
 	// 		在系统堆栈上运行的代码 【隐式不可抢占】，【垃圾收集器不扫描系统堆栈】。
 	// 		在系统堆栈上运行时，不会使用当前用户堆栈执行。
 	//
-	// g0 是仅用于 【负责调度】 的G, g0  不指向任何可执行的函数, 每个m都会有一个自己的g0,
-	//    在 【调度】 或 【系统调用】 时会使用g0的栈空间, 【全局变量的g0】 是m0的g0  (m0 是 main 线程)
+	// todo g0 是仅用于 【负责调度】 的G, g0  不指向任何可执行的函数, 每个m都会有一个自己的g0,
+	//      在 【调度】 或 【系统调用】 时会使用g0的栈空间, 【全局变量的g0】 是m0的g0  (m0 是 main 线程)
 	//
 	//			首先要明确的是每个m 都有一个g0，因为每个线程有一个【系统堆栈】，g0 虽然也是g的结构，但和普通的g还是有差别的，最重要的差别就是【栈的差别】.
 	// 					g0 上的栈是【系统分配的栈】，在linux上栈大小【默认固定 8 MB】，不能扩展，也不能缩小.
 	// 					而普通g  一开始只有 2 KB 大小，可扩展.
-	// 			在 g0 上 也没有任何任务函数，也没有任何状态，并且它 不能被 调度程序抢占 (因为调度就是在g0上跑的).
+	// 			todo 在 g0 上 也没有任何任务函数，也没有任何状态，并且它 不能被 调度程序抢占 【因为调度就是在g0上跑的】.
 	//
-	// m0 是启动程序后的主线程,   这个m对应的实例会在 全局变量m0中, 不需要在heap上分配,
+	// todo m0 是启动程序后的主线程,   这个m对应的实例会在 全局变量m0中, 不需要在heap上分配,
 	//    m0负责执行  初始化操作  和  启动第一个g, 在之后m0就和其他的m一样了.
 	//
 	//  用来执行调度指令的 goroutine
@@ -754,6 +789,10 @@ type m struct {  // todo M 里面 有 P 和 G
 	mOS  // 系统信号灯 实现
 }
 
+// P的数量默认为CPU总核心数，【最大为256】，当P没有可运行的G时候（P的可运行G队列为空），P会被放到调度器的空闲P列表中，等待M与它关联
+//
+// P有可能会被销毁，如运行时用runtime.GOMAXPROCS把P的数量从32降到16时，todo 剩余16个会被销毁，它们原来的G会先转到调度器可运行的G队列和自由G列表
+
 // todo P 的定义
 type p struct {  // todo P 中有 M
 
@@ -800,7 +839,7 @@ type p struct {  // todo P 中有 M
 	// P中 runq的尾 todo 本地运行队列的入队序号 (因为 runq队列一直在变)
 	runqtail uint32
 
-	// todo  P 中可运行的 G 队列
+	// todo  P 中可运行的 G 队列   《P的可运行G队列最大只能存放长度为256的G，当队列满后，调度器会把一半的G转到调度器的可运行G队列》
 	runq     [256]guintptr
 
 	// runnext, if non-nil, is a runnable G that was ready'd by
@@ -883,7 +922,7 @@ type p struct {  // todo P 中有 M
 	// filled by write barriers, drained by mutator assists, and
 	// disposed on certain GC state transitions.
 	//
-	// GC 的本地工作队列
+	// todo GC 的本地工作队列  <里面有 三色 队列 ???>
 	// gcw是 当前P的GC工作缓冲区高速缓存。工作缓冲区由写屏障填充，由辅助更改器耗尽，并放置在某些GC状态转换上。
 	gcw gcWork
 
@@ -961,6 +1000,8 @@ type schedt struct {
 	// sure to call checkdead().  当增加 nmidle，nmidlelocked，nmsys，nmfreed时，请确保调用 checkdead()
 	//
 	// todo 调度器的 【空闲 M 队列】 只存放目前没有被使用 (空闲) 的 M
+	//
+	// M空闲时不会被销毁，而是放到一个调度器的空闲M列表中，等待与P关联，todo  M 默认数量为10000
 	midle        muintptr // idle m's waiting for work
 
 	nmidle       int32    // number of idle m's waiting for work							当前等待工作的空闲 m 计数
@@ -991,6 +1032,13 @@ type schedt struct {
 	// Use schedEnableUser to control this.
 	//
 	// disable is protected by sched.lock.
+	//
+	// disable禁用有选择地禁用调度程序
+	//
+	// 使用schedEnableUser进行控制
+	//
+	// 禁用受sched.lock保护
+	//
 	disable struct {
 		// user disables scheduling of user goroutines.
 		user     bool
