@@ -75,12 +75,22 @@ type Map struct {
 	// Once enough misses have occurred to cover the cost of copying the dirty
 	// map, the dirty map will be promoted to the read map (in the unamended
 	// state) and the next store to the map will make a new dirty copy.
+
+	// misses计数自上次更新 read 映射 以来锁定mu以确定密钥是否存在所需的负载数
+
+	// 记录  read map 的未命中次数
 	misses int
 }
 
 // readOnly is an immutable struct stored atomically in the Map.read field.
+//
+// 一个 只读的 map
 type readOnly struct {
 	m       map[interface{}]*entry
+
+	// 如果 sync.Map的 dirty 中包含不在 m 中的某个键，则为true
+	//
+	// 表示 是否需要做 修正处理:
 	amended bool // true if the dirty map contains some key not in m.
 }
 
@@ -119,20 +129,30 @@ func newEntry(i interface{}) *entry {
 // value is present.
 // The ok result indicates whether value was found in the map.
 func (m *Map) Load(key interface{}) (value interface{}, ok bool) {
+
+	// 先读  read map
 	read, _ := m.read.Load().(readOnly)
 	e, ok := read.m[key]
+
+	// 如果 read map 找不到,  且 发现有数据不一致 需要修正
 	if !ok && read.amended {
 		m.mu.Lock()
 		// Avoid reporting a spurious miss if m.dirty got promoted while we were
 		// blocked on m.mu. (If further loads of the same key will not miss, it's
 		// not worth copying the dirty map for this key.)
+
+		// 上 sync.map 的锁之后 再次读取 read, 并 再次判断
 		read, _ = m.read.Load().(readOnly)
 		e, ok = read.m[key]
 		if !ok && read.amended {
+
+			// 从 dirty 中读取
 			e, ok = m.dirty[key]
 			// Regardless of whether the entry was present, record a miss: this key
 			// will take the slow path until the dirty map is promoted to the read
 			// map.
+
+			// 叠加  read map 的未命中次数
 			m.missLocked()
 		}
 		m.mu.Unlock()
@@ -140,6 +160,8 @@ func (m *Map) Load(key interface{}) (value interface{}, ok bool) {
 	if !ok {
 		return nil, false
 	}
+
+	// 返回 elem
 	return e.load()
 }
 
@@ -153,29 +175,45 @@ func (e *entry) load() (value interface{}, ok bool) {
 
 // Store sets the value for a key.
 func (m *Map) Store(key, value interface{}) {
+
+	// 优先操作 read map， 因为 read map 中的  key-value 数目 全部是之前的 k-v
+	//
+	//  而 dirty 只可能是  新放进来的 k-v
 	read, _ := m.read.Load().(readOnly)
-	if e, ok := read.m[key]; ok && e.tryStore(&value) {
+	if e, ok := read.m[key]; ok && e.tryStore(&value) {   // 如果在 read 中刚找到 k-v 则更新
 		return
 	}
 
 	m.mu.Lock()
 	read, _ = m.read.Load().(readOnly)
+
+	// 否则， read 中找得到， 但是 value 条目被删除  【则 将k-v存到 dirty】
 	if e, ok := read.m[key]; ok {
 		if e.unexpungeLocked() {
 			// The entry was previously expunged, which implies that there is a
 			// non-nil dirty map and this entry is not in it.
+			//
+			// 该条目先前已删除，这意味着存在一个非零的 dirty 映射，并且该条目不在其中。
 			m.dirty[key] = e
 		}
 		e.storeLocked(&value)
+
+	// 只在 dirty 中找到， 则将 k-v 存到 dirty
 	} else if e, ok := m.dirty[key]; ok {
 		e.storeLocked(&value)
+
+	// read 和  dirty 都找不到
 	} else {
+
+		//
 		if !read.amended {
 			// We're adding the first new key to the dirty map.
 			// Make sure it is allocated and mark the read-only map as incomplete.
 			m.dirtyLocked()
 			m.read.Store(readOnly{m: read.m, amended: true})
 		}
+
+		// 将 k-v 丢到  dirty
 		m.dirty[key] = newEntry(value)
 	}
 	m.mu.Unlock()
@@ -188,7 +226,7 @@ func (m *Map) Store(key, value interface{}) {
 func (e *entry) tryStore(i *interface{}) bool {
 	for {
 		p := atomic.LoadPointer(&e.p)
-		if p == expunged {
+		if p == expunged {  // 判断是否为 空指针
 			return false
 		}
 		if atomic.CompareAndSwapPointer(&e.p, p, unsafe.Pointer(i)) {
@@ -287,6 +325,8 @@ func (e *entry) tryLoadOrStore(i interface{}) (actual interface{}, loaded, ok bo
 
 // Delete deletes the value for a key.
 func (m *Map) Delete(key interface{}) {
+
+	// 优先 处理 read
 	read, _ := m.read.Load().(readOnly)
 	e, ok := read.m[key]
 	if !ok && read.amended {
@@ -332,22 +372,28 @@ func (m *Map) Range(f func(key, value interface{}) bool) {
 	// If read.amended is false, then read.m satisfies that property without
 	// requiring us to hold m.mu for a long time.
 	read, _ := m.read.Load().(readOnly)
+	// 当 发生 dirty 和 read 两个map的数据不一致时,  需要做 【修正】
 	if read.amended {
 		// m.dirty contains keys not in read.m. Fortunately, Range is already O(N)
 		// (assuming the caller does not break out early), so a call to Range
 		// amortizes an entire copy of the map: we can promote the dirty copy
 		// immediately!
+
+		// 先上  sync.Map 的锁,  再次 判断一下
 		m.mu.Lock()
 		read, _ = m.read.Load().(readOnly)
 		if read.amended {
+
+			// 引用 dirty 作为新的 read
 			read = readOnly{m: m.dirty}
 			m.read.Store(read)
-			m.dirty = nil
+			m.dirty = nil  // 将  dirty 置为 nil
 			m.misses = 0
 		}
 		m.mu.Unlock()
 	}
 
+	// 从新的  read map 中 遍历
 	for k, e := range read.m {
 		v, ok := e.load()
 		if !ok {
@@ -376,6 +422,8 @@ func (m *Map) dirtyLocked() {
 
 	read, _ := m.read.Load().(readOnly)
 	m.dirty = make(map[interface{}]*entry, len(read.m))
+
+	// 将 read 中的  k-v 删掉,  并将 k-v 搬到 dirty
 	for k, e := range read.m {
 		if !e.tryExpungeLocked() {
 			m.dirty[k] = e

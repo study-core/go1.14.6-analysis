@@ -44,7 +44,9 @@ import (
 //
 //  对象池 pool 实现
 //
-// 保存和复用临时对象，减少内存分配，降低GC压力
+// todo 保存和复用临时对象，减少内存分配，降低GC压力
+//
+// todo sync.pool是优化gc的利器   (通过堆对象复用达到减少gc延迟的库)
 type Pool struct {
 
 	// 和 WaitGroup 及  Cond 中的用法一样
@@ -63,7 +65,7 @@ type Pool struct {
 	// local 数组的大小
 	localSize uintptr        // size of the local array
 
-	// 上一个周期的 local 数组
+	// 上一个周期的 local 数组  (在GC 来临之前 STW中调用 Cleanup() 去清除 victim数据, 并将local 置为新的 victim)
 	victim     unsafe.Pointer // local from previous cycle
 	victimSize uintptr        // size of victims array
 
@@ -212,9 +214,9 @@ func (p *Pool) Get() interface{} {
 		// Try to pop the head of the local shard. We prefer
 		// the head over the tail for temporal locality of
 		// reuse.
-		x, _ = l.shared.popHead()   // 再拿 自己 shared 链表中的 一个 obj
+		x, _ = l.shared.popHead()   // todo 再拿 自己 shared 链表中的 一个 obj
 		if x == nil {
-			x = p.getSlow(pid)     // 尝试 去 其他 pool 实例中 偷出 一个  obj
+			x = p.getSlow(pid)     // todo 尝试 去 其他 pool 实例中 偷出 一个  obj
 		}
 	}
 
@@ -235,8 +237,16 @@ func (p *Pool) Get() interface{} {
 }
 
 func (p *Pool) getSlow(pid int) interface{} {
+
+	// atomic cas 和 mutex的区别
+	// 结合sync.pool的场景来说，从shared获取缓存对象，这个操作本应是很快的.
+	// 但如果用mutex，协程竞争下会被陷入到wait queue里，等待他人放锁后被runtime goready唤醒，推到runq，然后再被调度.
+	// 而使用atomic cas就简单多了，大概率多轮几次就差不多能拿锁了.
+
 	// See the comment in pin regarding ordering of the loads.
 	size := atomic.LoadUintptr(&p.localSize) // load-acquire
+
+	// todo 先找 local
 	locals := p.local                        // load-consume
 	// Try to steal one element from other procs.
 	//
@@ -244,7 +254,7 @@ func (p *Pool) getSlow(pid int) interface{} {
 	//
 	//   其实也不是直接去 其他  P 中获取, 还是这个 pool 只不过每个 pool 中的 local 都会根据 PID 将不同 obj 隐性的 绑定到各个 P上
 	for i := 0; i < int(size); i++ {
-		l := indexLocal(locals, (pid+i+1)%int(size))
+		l := indexLocal(locals, (pid+i+1)%int(size)) // 逐个 遍历 其他 pid <+1方式>
 		if x, _ := l.shared.popTail(); x != nil {
 			return x
 		}
@@ -257,6 +267,8 @@ func (p *Pool) getSlow(pid int) interface{} {
 	if uintptr(pid) >= size {
 		return nil
 	}
+
+	// todo 再找 victim
 	locals = p.victim
 	l := indexLocal(locals, pid)
 	if x := l.private; x != nil {

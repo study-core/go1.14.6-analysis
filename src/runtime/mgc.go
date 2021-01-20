@@ -1386,7 +1386,7 @@ func (t gcTrigger) test() bool {
 // todo  `gcStart()` 启动GC       (启动GC的入口函数)
 // 			它从 _GCoff 转换为 _GCmark（如果 debug.gcstoptheworld == 0）或  执行所有GC（如果 debug.gcstoptheworld != 0）。
 //
-// 在某些情况下，例如 在系统堆栈上调用 或 持有锁时，可能不执行此转换就返回此值。
+// 在某些情况下，例如 在系统堆栈上调用 或 持有锁时，可能不执行此转换就返回此值。   每2min一次 触发gc
 func gcStart(trigger gcTrigger) {
 
 	// 判断当前G是否  【可抢占】, 不可抢占时不触发GC

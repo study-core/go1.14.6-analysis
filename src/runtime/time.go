@@ -333,6 +333,8 @@ func doaddtimer(pp *p, t *timer) {
 	// 给timer 设置 关联当前 timer 的 P 的地址
 	t.pp.set(pp)
 
+	// 先取 timers 的长度 再追加 t, 这样就做到了 取到了 t 的下标
+
 	// 取出 该 P 中的 timer 堆的长度
 	i := len(pp.timers)
 
@@ -507,7 +509,7 @@ func dodeltimer0(pp *p) {
 	pp.timers[last] = nil   // 删除 最后一个元素
 	pp.timers = pp.timers[:last]  // 更新 堆 数组  (已经是 删除掉 第一个元素的 堆数组 了)
 
-	// 调整堆
+	// 向下调整堆
 	if last > 0 {
 		siftdownTimer(pp.timers, 0)
 	}
@@ -1038,7 +1040,7 @@ func runOneTimer(pp *p, t *timer, now int64) {
 		// Leave in heap but adjust next time to fire.  留在堆中，但下次调整触发时间。
 		delta := t.when - now
 		t.when += t.period * (1 + -delta/t.period)			// 更新下次 触发时间
-		siftdownTimer(pp.timers, 0)						// 调整堆
+		siftdownTimer(pp.timers, 0)						// 向下调整堆
 		if !atomic.Cas(&t.status, timerRunning, timerWaiting) {
 			badTimer()
 		}
@@ -1275,13 +1277,30 @@ func timeSleepUntil() (int64, *p) {
 // "panic holding locks" message. Instead, we panic while not
 // holding a lock.
 
-func siftupTimer(t []*timer, i int) {
+// 对于 二叉树 来说:  todo 深度为k的二叉树,最多有2^k-1个节点
+//
+//
+//						              0
+//					  / 	    /   	 	\    		   \
+//				     1     	   2    	 	 3  			4
+//			     / /  \ \  	 / / \ \	  / /  \ \		/ /	  \ \
+//			   5  6   7  8 	9 10 11	12   13 14 15 16  17 18  19 20       (深度为 k 的 4叉树， 每层节点总数为 4^(k-1))
+//
+//
+//
+
+func siftupTimer(t []*timer, i int) {  // 向上调整堆
+
+	// 此处入参的 i 取值  len(timers) - 1
+
 	if i >= len(t) {
 		badTimer()
 	}
 	when := t[i].when
 	tmp := t[i]
 	for i > 0 {
+
+		// i 已经是 最后一个元素的下标了,  那么这里 - 1 再/4 整好可以得到 parent 的下标
 		p := (i - 1) / 4 // parent     todo timer的堆实现： 最小四叉堆
 		if when >= t[p].when {
 			break
@@ -1294,7 +1313,10 @@ func siftupTimer(t []*timer, i int) {
 	}
 }
 
-func siftdownTimer(t []*timer, i int) {
+func siftdownTimer(t []*timer, i int) {  // 向下调整堆
+
+	// 此处入参的 i 取值  len(timers) - 1
+
 	n := len(t)
 	if i >= n {
 		badTimer()

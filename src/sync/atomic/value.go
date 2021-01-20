@@ -82,5 +82,5 @@ func (v *Value) Store(x interface{}) {
 }
 
 // Disable/enable preemption, implemented in runtime.
-func runtime_procPin()
-func runtime_procUnpin()
+func runtime_procPin()				// proc.go 中有实现  sync_runtime_procPin()       只做一件事:  _g_.m.locks--  防止 被gc
+func runtime_procUnpin()			// proc.go 中有实现  sync_runtime_procUnpin()

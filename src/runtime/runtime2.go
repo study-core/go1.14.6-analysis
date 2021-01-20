@@ -455,9 +455,9 @@ type sudog struct {
 	acquiretime int64
 	releasetime int64
 
-	// 票号, 在 sync.Cond 中被使用的东西， 在 sema 信号灯中也用到了
+	// 票号, 在 sync.Cond 中被使用的东西， 在 sema 信号灯中也用到了 <Treap 中的 优先级>
 	ticket      uint32
-	parent      *sudog // semaRoot binary tree
+	parent      *sudog // semaRoot binary tree   <sudog 存放在 Treap 上时  的 parent 引用>
 	waitlink    *sudog // g.waiting list or semaRoot
 	waittail    *sudog // semaRoot
 

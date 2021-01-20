@@ -165,8 +165,8 @@ func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags, skipframes i
 	root := semroot(addr)	// todo 获取一个 semaRoot
 	t0 := int64(0)
 	s.releasetime = 0
-	s.acquiretime = 0
-	s.ticket = 0  // g 的 票号
+	s.acquiretime = 0  	// 开始阻塞的时间 <也是 treap 上的 key>
+	s.ticket = 0  		// g 的 票号  <也是 treap 上的 优先级>
 
 	// 一些性能采集的参数 应该是
 	if profile&semaBlockProfile != 0 && blockprofilerate > 0 {
@@ -196,8 +196,9 @@ func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags, skipframes i
 		}
 		// Any semrelease after the cansemacquire knows we're waiting
 		// (we set nwait above), so go to sleep.
-		// 加到 semaRoot treap 上
-		root.queue(addr, s, lifo)
+		//
+		root.queue(addr, s, lifo) // todo 加到 semaRoot treap 上
+
 		// 解锁 semaRoot ，todo 并且把当前 g 的状态改为等待，然后让当前的 m 调用其他的 g 执行，当前 g 相当于等待
 		goparkunlock(&root.lock, waitReasonSemacquire, traceEvGoBlockSync, 4+skipframes)
 		if s.ticket != 0 || cansemacquire(addr) {
@@ -333,7 +334,7 @@ func semrelease1(addr *uint32, handoff bool, skipframes int) {
 func semroot(addr *uint32) *semaRoot {
 
 	// 去 addr 变量对应的指针的值,  算出他在哪个 Treap
-	return &semtable[(uintptr(unsafe.Pointer(addr))>>3)%semTabSize].root
+	return &semtable[(uintptr(unsafe.Pointer(addr))>>3)%semTabSize].root    // Treap 的 key 是 sudog 的 acquiretime， 而 优先级 是 ticket
 }
 
 
@@ -456,14 +457,14 @@ func (root *semaRoot) queue(addr *uint32, s *sudog, lifo bool) {
 	//
 	//
 
-	// 随机生成 票号  作为 sudog 在 Treap 中的优先级
+	// todo 随机生成 票号  作为 sudog 在 Treap 中的优先级
 	s.ticket = fastrand() | 1
 	s.parent = last
 	*pt = s
 
 	// todo 调整 Treap
 	//
-	// Rotate up into tree according to ticket (priority).   是用了 最小堆 ??
+	// Rotate up into tree according to ticket (priority).   是用了 最小堆 ??  (根据 ticket 票号作为优先级)
 	for s.parent != nil && s.parent.ticket > s.ticket {
 		if s.parent.prev == s {
 			root.rotateRight(s.parent)

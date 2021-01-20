@@ -31,8 +31,14 @@ const (
 // Known to compiler.
 // Changes here must also be made in src/cmd/internal/gc/select.go's scasetype.
 type scase struct {
+
+	// chan 的引用
 	c           *hchan         // chan
+
+	// ptr 到数据 (SendDir) 或 ptr 接收缓冲区 (RecvDir)
 	elem        unsafe.Pointer // data element
+
+	// case 中 chan 的类型:  caseDefault、caseSend、caseRecv
 	kind        uint16
 	pc          uintptr // race pc (for race detector / msan)
 	releasetime int64
@@ -592,11 +598,14 @@ type runtimeSelect struct {
 
 	// select case 的 方向
 	dir selectDir
+
+	// chan 类型（此处未使用）
 	typ unsafe.Pointer // channel type (not used here)
 
 	// 这个是 当前 select 的 case 中的 chan 引用
 	ch  *hchan         // channel
 
+	// ptr 到数据 (SendDir) 或 ptr 接收缓冲区 (RecvDir)
 	val unsafe.Pointer // ptr to data (SendDir) or ptr to receive buffer (RecvDir)
 }
 
