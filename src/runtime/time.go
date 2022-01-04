@@ -503,6 +503,8 @@ func dodeltimer(pp *p, i int) {
 //
 // dodeltimer0() 从当前 P 的堆中移除定时器 0。
 //
+// todo 移除 堆顶 timer
+//
 // 当 this 被调用时，我们被锁定在 P 上。
 // 它报告它是否因为比赛没有看到任何问题。
 // 调用者必须锁定 pp 的定时器。
@@ -547,8 +549,6 @@ func modtimer(t *timer, when, period int64, f func(interface{}, uintptr), arg in
 	var mp *m
 loop:
 	for {
-
-
 		switch status = atomic.Load(&t.status); status {
 
 		// 【在等待中】 || 【修改为更早】 || 【修改为更晚】
@@ -713,7 +713,6 @@ loop:
 	}
 }
 
-
 // todo 重置timer时间
 //
 //      when 为 新设置的 时间
@@ -785,7 +784,6 @@ func cleantimers(pp *p) {
 				atomic.Xadd(&pp.adjustTimers, -1)
 			}
 
-
 			if !atomic.Cas(&t.status, timerMoving, timerWaiting) {  // 更改时间完成后, 将该timer 的状态置为 【等待中】
 				badTimer()		// 修改失败,  抛异常
 			}
@@ -855,7 +853,7 @@ func moveTimers(pp *p, timers []*timer) {
 // it also moves timers that have been modified to run later,
 // and removes deleted timers. The caller must have locked the timers for pp.
 //
-// adjusttimers() 在当前 P 的堆中查找任何已被修改为更早运行的定时器，并将它们放在堆中的正确位置。
+// adjusttimers() todo 在当前 P 的堆中查找任何已被修改为更早运行的定时器，并将它们放在堆中的正确位置。
 // 在查找这些计时器的同时，它还移动已修改为稍后运行的计时器，并删除已删除的计时器。调用者必须锁定 pp 的计时器。
 func adjusttimers(pp *p) {
 	if len(pp.timers) == 0 {
@@ -917,7 +915,7 @@ loop:
 	}
 
 	if len(moved) > 0 {
-		addAdjustedTimers(pp, moved)
+		addAdjustedTimers(pp, moved) // 这里面有 doaddtimer
 	}
 
 	if verifyTimers {
@@ -957,7 +955,7 @@ func nobarrierWakeTime(pp *p) int64 {
 	}
 }
 
-// 执行定时器,   执行一个定时器
+// 执行定时器,  todo 执行一个定时器  【最开始的入口】  proc.go(checkTimers()) -> time.go(runtimer() -> time.go(runOneTimer()))
 // todo 尝试着 运行 Timer 堆中第一个 Timer
 //
 // runtimer examines the first timer in timers. If it is ready based on now,
@@ -980,7 +978,7 @@ func nobarrierWakeTime(pp *p) int64 {
 //go:systemstack
 func runtimer(pp *p, now int64) int64 {
 	for {
-		t := pp.timers[0]
+		t := pp.timers[0] // 获取 堆顶的 timer todo 注意这时候 堆顶的 timer 还没被移除哦
 		if t.pp.ptr() != pp {
 			throw("runtimer: bad p")
 		}
@@ -988,7 +986,7 @@ func runtimer(pp *p, now int64) int64 {
 		case timerWaiting:
 			if t.when > now {
 				// Not ready to run.
-				return t.when
+				return t.when // 返回马上要被执行的 timer 的时间点
 			}
 
 			if !atomic.Cas(&t.status, s, timerRunning) {
@@ -1048,7 +1046,7 @@ func runtimer(pp *p, now int64) int64 {
 // This will temporarily unlock the timers while running the timer function.
 //
 //
-// `runOneTimer()` 运行一个计时器
+// `runOneTimer()` todo 运行一个计时器
 //
 //  调用者必须锁定pp的计时器
 //  这将在运行时间功能时 临时 解锁 计时器
@@ -1074,7 +1072,7 @@ func runOneTimer(pp *p, t *timer, now int64) {
 		// Leave in heap but adjust next time to fire.  留在堆中，但下次调整触发时间。
 		delta := t.when - now
 		t.when += t.period * (1 + -delta/t.period)			// 更新下次 触发时间
-		siftdownTimer(pp.timers, 0)						// 向下调整堆
+		siftdownTimer(pp.timers, 0)						// 向下调整堆 todo (刚被执行过的  ticker 重置时间  肯定不会被翻转到堆顶的, 因为她的 when会是一个未来时间，所以只能往 堆底翻转)
 		if !atomic.Cas(&t.status, timerRunning, timerWaiting) {
 			badTimer()
 		}
@@ -1082,11 +1080,10 @@ func runOneTimer(pp *p, t *timer, now int64) {
 		// 设置P的 timer0When 字段
 		updateTimer0When(pp)
 
-
 	// todo timer 执行的是 Timer 定时器
 	} else {
 		// Remove from heap.
-		dodeltimer0(pp) 		// 从堆中 移除 timer
+		dodeltimer0(pp) 		// 从堆中 移除 堆顶的 timer
 		if !atomic.Cas(&t.status, timerRunning, timerNoStatus) {
 			badTimer()
 		}
@@ -1101,13 +1098,13 @@ func runOneTimer(pp *p, t *timer, now int64) {
 		gp.racectx = gp.m.p.ptr().timerRaceCtx
 	}
 
-	unlock(&pp.timersLock)
+	unlock(&pp.timersLock) // 先解锁是因为  外面调用方已经 lock 了
 
 
 	// todo 执行 定时器 回调func
 	f(arg, seq)
 
-	lock(&pp.timersLock)
+	lock(&pp.timersLock)  // 执行完逻辑之后，再次 lock，由调用方 来做 unlock
 
 	if raceenabled {
 		gp := getg()

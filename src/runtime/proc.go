@@ -2528,6 +2528,7 @@ top:
 	}
 
 	// todo 先检查下当前 P 中的 runtimeTimer 堆中的 定时器
+	//		 这里面包含了, 执行 timer 的逻辑入口哈
 	now, pollUntil, _ := checkTimers(_p_, 0)
 
 	if fingwait && fingwake {
@@ -2638,6 +2639,10 @@ top:
 					// that is always has room to add
 					// stolen G's. So check now if there
 					// is a local G to run.
+					//
+					// 运行 timer 可能已经准备好任意数量的 G 并将它们添加到这个 P 的本地运行队列中。
+					// 这使 runqsteal 总是有空间添加被盗 G 的假设无效。所以现在检查是否有本地 G 运行。
+					//
 					if gp, inheritTime := runqget(_p_); gp != nil {
 						return gp, inheritTime
 					}
@@ -3125,6 +3130,15 @@ func dropg() {
 //		findrunnable(): 快速获取一个 可执行的G 的开始时
 //		findrunnable(): 快速获取一个 可执行的G 的从其他P中偷G动作时
 //
+//	@params
+//		pp 需要操作那个 P
+//		时间戳 (可为0), 当为0时取 nanotime()
+//
+//	@return
+//		rnow   		当前时间, 可能为0
+//		pollUntil 	马上要被执行的那个timer (堆顶的 timer)的 时间点
+//		ran         表示堆中有 timer 可以被遍历标识位, true: 可以被遍历
+//
 //go:yeswritebarrierrec
 func checkTimers(pp *p, now int64) (rnow, pollUntil int64, ran bool) {
 	// If there are no timers to adjust, and the first timer on
@@ -3150,6 +3164,8 @@ func checkTimers(pp *p, now int64) (rnow, pollUntil int64, ran bool) {
 
 	lock(&pp.timersLock)
 
+	// 先调整一波 pp上面的 timers 堆
+	// todo 在当前 P 的堆中查找任何已被修改为更早运行的定时器，并将它们放在堆中的正确位置。
 	adjusttimers(pp)
 
 	rnow = now
@@ -3160,9 +3176,9 @@ func checkTimers(pp *p, now int64) (rnow, pollUntil int64, ran bool) {
 		for len(pp.timers) > 0 {
 			// Note that runtimer may temporarily unlock
 			// pp.timersLock.
-			if tw := runtimer(pp, rnow); tw != 0 {    // checkTimers() 中, 执行 定时器 (调度定时器)
+			if tw := runtimer(pp, rnow); tw != 0 {    // todo checkTimers() 中, 执行 定时器 (调度定时器)
 				if tw > 0 {
-					pollUntil = tw
+					pollUntil = tw // 马上要被执行的那个timer (堆顶的 timer)的 时间点
 				}
 				break
 			}
@@ -3173,6 +3189,8 @@ func checkTimers(pp *p, now int64) (rnow, pollUntil int64, ran bool) {
 	// If this is the local P, and there are a lot of deleted timers,
 	// clear them out. We only do this for the local P to reduce
 	// lock contention on timersLock.
+	//
+	// 如果这是本地P，并且有很多被删除的定时器，清除它们<状态为 delete的timers>。我们只对本地 P 这样做以减少 timersLock 上的锁争用。
 	if pp == getg().m.p.ptr() && int(atomic.Load(&pp.deletedTimers)) > len(pp.timers)/4 {
 		clearDeletedTimers(pp)
 	}
