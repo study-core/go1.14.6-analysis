@@ -487,6 +487,9 @@ func dodeltimer(pp *p, i int) {
 	if i != last {
 		// Moving to i may have moved the last timer to a new parent,
 		// so sift up to preserve the heap guarantee.
+		//
+		// 移至 i 可能已将最后一个 timer 移至新的父级，因此请进行筛选以保留堆保证。
+		//
 		siftupTimer(pp.timers, i)
 		siftdownTimer(pp.timers, i)
 	}
