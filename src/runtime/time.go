@@ -466,6 +466,12 @@ func deltimer(t *timer) bool {
 // We are locked on the P when this is called.
 // It reports whether it saw no problems due to races.
 // The caller must have locked the timers for pp.
+//
+// dodeltimer() 从当前 P 的堆中删除计时器 i。
+//
+// 当 this 被调用时，我们被锁定在 P 上。
+// 它报告它是否因为比赛没有看到任何问题。
+// 调用者必须锁定 pp 的定时器。
 func dodeltimer(pp *p, i int) {
 	if t := pp.timers[i]; t.pp.ptr() != pp {
 		throw("dodeltimer: wrong P")
@@ -494,6 +500,12 @@ func dodeltimer(pp *p, i int) {
 // We are locked on the P when this is called.
 // It reports whether it saw no problems due to races.
 // The caller must have locked the timers for pp.
+//
+// dodeltimer0() 从当前 P 的堆中移除定时器 0。
+//
+// 当 this 被调用时，我们被锁定在 P 上。
+// 它报告它是否因为比赛没有看到任何问题。
+// 调用者必须锁定 pp 的定时器。
 func dodeltimer0(pp *p) {
 
 	// 检查下 timer 中的 P 是不是 当前操作 timer 的 P
@@ -520,6 +532,9 @@ func dodeltimer0(pp *p) {
 // todo 修改 timer 的定时时间点
 // modtimer modifies an existing timer.
 // This is called by the netpoll code.
+//
+// modtimer() 修改现有的计时器。
+// 这是由 netpoll 代码调用的
 func modtimer(t *timer, when, period int64, f func(interface{}, uintptr), arg interface{}, seq uintptr) {
 
 	// when 为修改 定时器的 新时间值
@@ -707,6 +722,11 @@ loop:
 // If used for an inactive timer, the timer will become active.
 // This should be called instead of addtimer if the timer value has been,
 // or may have been, used previously.
+//
+// resettimer() 重置计时器应该触发的时间。
+//
+// 如果用于非活动计时器，则计时器将变为活动状态。
+// 如果之前已经或可能已经使用了计时器值，则应该调用它而不是 addtimer()。
 func resettimer(t *timer, when int64) {
 	modtimer(t, when, t.period, t.f, t.arg, t.seq)
 }
@@ -780,6 +800,11 @@ func cleantimers(pp *p) {
 // from a different P.
 // This is currently called when the world is stopped, but the caller
 // is expected to have locked the timers for pp.
+//
+// moveTimers() 将一个 计时器切片 移动到 pp。切片已从不同的 P 中获取。
+// 当前在 stopTheWorld() 时调用此方法，但预计调用者已锁定 pp 的计时器。
+//
+// 从别的 p 上偷来的 timers 切片 转移到 pp 这个p上
 func moveTimers(pp *p, timers []*timer) {
 	for _, t := range timers {
 	loop:
@@ -829,6 +854,9 @@ func moveTimers(pp *p, timers []*timer) {
 // the correct place in the heap. While looking for those timers,
 // it also moves timers that have been modified to run later,
 // and removes deleted timers. The caller must have locked the timers for pp.
+//
+// adjusttimers() 在当前 P 的堆中查找任何已被修改为更早运行的定时器，并将它们放在堆中的正确位置。
+// 在查找这些计时器的同时，它还移动已修改为稍后运行的计时器，并删除已删除的计时器。调用者必须锁定 pp 的计时器。
 func adjusttimers(pp *p) {
 	if len(pp.timers) == 0 {
 		return
@@ -899,6 +927,8 @@ loop:
 
 // addAdjustedTimers adds any timers we adjusted in adjusttimers
 // back to the timer heap.
+//
+// addAdjustedTimers() 将我们在 adjusttimers() 中调整的任何计时器添加回计时器堆。
 func addAdjustedTimers(pp *p, moved []*timer) {
 	for _, t := range moved {
 		doaddtimer(pp, t)
@@ -914,6 +944,10 @@ func addAdjustedTimers(pp *p, moved []*timer) {
 // any write barriers. Therefore, if there are any timers that needs
 // to be moved earlier, it conservatively returns the current time.
 // The netpoller M will wake up and adjust timers before sleeping again.
+//
+// nobarrierWakeTime() 查看 P 的计时器并返回我们应该唤醒 netpoller 的时间。如果没有计时器，则返回 0。
+// 此函数在【删除 P 时调用】，并且必须在没有任何写入障碍的情况下运行。因此，如果有任何计时器需要提前移动，则保守地返回当前时间。
+// netpoller M 将在再次休眠之前唤醒并调整定时器
 //go:nowritebarrierrec
 func nobarrierWakeTime(pp *p) int64 {
 	if atomic.Load(&pp.adjustTimers) > 0 {
@@ -961,7 +995,7 @@ func runtimer(pp *p, now int64) int64 {
 				continue
 			}
 			// Note that runOneTimer may temporarily unlock
-			// pp.timersLock.   请注意，runOneTimer 可能会暂时解锁 pp.timersLock
+			// pp.timersLock.   请注意，runOneTimer() 可能会暂时解锁 pp.timersLock
 			runOneTimer(pp, t, now)
 			return 0
 
@@ -1090,6 +1124,15 @@ func runOneTimer(pp *p, t *timer, now int64) {
 // other than moveTimers which only runs when the world is stopped.
 //
 // The caller must have locked the timers for pp.
+//
+// clearDeletedTimers() 从 P 的定时器堆中移除所有已删除的定时器。
+//
+// 这用于避免在程序启动大量长时间运行的计时器然后停止它们时堵塞堆。
+// 例如，这可以通过 context.WithTimeout() 发生。
+//
+// 这是唯一一个遍历整个定时器堆的函数，而 moveTimers() 只在世界停止时运行。
+//
+// 调用者必须锁定 pp 的定时器。
 func clearDeletedTimers(pp *p) {
 	cdel := int32(0)
 	cearlier := int32(0)
@@ -1170,6 +1213,11 @@ nextTimer:
 // verifyTimerHeap verifies that the timer heap is in a valid state.
 // This is only for debugging, and is only called if verifyTimers is true.
 // The caller must have locked the timers.
+//
+// verifyTimerHeap() 验证定时器堆是否处于有效状态。
+//
+// 这仅用于调试，并且仅在 verifyTimers 变量 为真时调用。
+// 调用者必须锁定定时器。
 func verifyTimerHeap(pp *p) {
 	for i, t := range pp.timers {
 		if i == 0 {
@@ -1209,7 +1257,7 @@ func updateTimer0When(pp *p) {
 // and the P that holds the timer heap that that timer is on.
 // This is only called by sysmon and checkdead.
 //
-// timeSleepUntil 返回下一个计时器应该触发的时间，以及保存该计时器开启的计时器堆的 P。
+// timeSleepUntil() 返回下一个计时器应该触发的时间，以及保存该计时器开启的计时器堆的 P。
 // 这仅由 sysmon 和 checkdead 调用。
 func timeSleepUntil() (int64, *p) {
 	next := int64(maxWhen)
@@ -1363,6 +1411,9 @@ func siftdownTimer(t []*timer, i int) {  // 向下调整堆
 // presumably due to racy use by the program. We panic here rather than
 // panicing due to invalid slice access while holding locks.
 // See issue #25686.
+//
+// 如果计时器数据结构已损坏，则调用 badTimer()，大概是由于程序的不当使用。我们在这里恐慌而不是由于持有锁时无效的切片访问而恐慌。
+// 参见问题 #25686。
 func badTimer() {
 	throw("timer data corruption")
 }
